@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+*.tgz
+.env
+.env.*
+coverage/
+test-output.txt
+opencode.json

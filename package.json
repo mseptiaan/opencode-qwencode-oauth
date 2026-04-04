@@ -1,0 +1,83 @@
+{
+  "name": "opencode-qwen-oauth",
+  "version": "0.0.1",
+  "description": "Qwen OAuth authentication plugin for OpenCode with multi-account rotation and API translation",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "opencode-qwen-oauth": "./dist/src/cli/install.js"
+  },
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "OpenCode Qwen Oauth Contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mseptiaan/opencode-qwen-oauth.git"
+  },
+  "homepage": "https://github.com/mseptiaan/opencode-qwen-oauth#readme",
+  "bugs": {
+    "url": "https://github.com/mseptiaan/opencode-qwen-oauth/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-plugins",
+    "qwen",
+    "qwen-auth",
+    "qwen-oauth",
+    "alibaba",
+    "oauth",
+    "authentication",
+    "ai",
+    "llm",
+    "api-translation",
+    "device-flow"
+  ],
+  "engines": {
+    "node": ">=20.0.0",
+    "bun": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:e2e": "bun scripts/e2e-test.ts",
+    "test:coverage": "bun test --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "prepublishOnly": "bun run build"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.0.150",
+    "typescript": "^5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.11",
+    "@opencode-ai/plugin": "^1.0.150",
+    "@types/bun": "^1.3.6",
+    "@types/node": "^24.10.1",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "prompts": "^2.4.2",
+    "proper-lockfile": "^4.1.2",
+    "zod": "^3.24.0"
+  }
+}
