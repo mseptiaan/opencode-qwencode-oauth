@@ -116,6 +116,7 @@ export async function loadTrackerState(
   // This bridges the gap on first run or after the tracker state file is missing.
   if (!loadedFromFile && accounts && accounts.length > 0) {
     const maxScore = healthTracker.config.maxScore;
+    const seedData: Record<string, HealthScoreState> = {};
     for (let i = 0; i < accounts.length; i++) {
       const account = accounts[i];
       if (!account?.health) continue;
@@ -128,14 +129,15 @@ export async function loadTrackerState(
         0,
         Math.round((successRate - recencyPenalty) * maxScore),
       );
-      healthTracker.loadFromJSON({
-        [String(i)]: {
-          score: seedScore,
-          lastUpdated: h.lastFailure ?? h.lastSuccess ?? Date.now(),
-          lastSuccess: h.lastSuccess ?? 0,
-          consecutiveFailures: h.consecutiveFailures,
-        },
-      });
+      seedData[String(i)] = {
+        score: seedScore,
+        lastUpdated: h.lastFailure ?? h.lastSuccess ?? Date.now(),
+        lastSuccess: h.lastSuccess ?? 0,
+        consecutiveFailures: h.consecutiveFailures,
+      };
+    }
+    if (Object.keys(seedData).length > 0) {
+      healthTracker.loadFromJSON(seedData);
     }
   }
 }
