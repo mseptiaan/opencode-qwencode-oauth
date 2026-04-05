@@ -24,10 +24,11 @@ jobs:
       - name: Build
         run: bun run build
 
+      # Do not set registry-url here: it injects NODE_AUTH_TOKEN from the GitHub token, which is
+      # invalid for registry.npmjs.org and blocks OIDC trusted publishing (npm >= 11.5.1).
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: "https://registry.npmjs.org"
 
       # Trusted publishing (OIDC) requires npm CLI >= 11.5.1 (see npm trusted-publishers docs).
       - name: Upgrade npm for OIDC trusted publishing
@@ -43,5 +44,16 @@ jobs:
             echo "tag=latest" >> $GITHUB_OUTPUT
           fi
 
-      - name: Publish to npm
+      # OIDC: no NODE_AUTH_TOKEN (add Trusted Publisher for this package on npmjs.com).
+      # Fallback: add repo secret NPM_TOKEN (granular publish) until OIDC is configured.
+      - name: Publish to npm (OIDC trusted publishing)
+        if: ${{ secrets.NPM_TOKEN == '' }}
         run: npm publish --access public --tag ${{ steps.npm-tag.outputs.tag }}
+
+      - name: Publish to npm (NPM_TOKEN secret)
+        if: ${{ secrets.NPM_TOKEN != '' }}
+        run: |
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          npm publish --access public --tag ${{ steps.npm-tag.outputs.tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
