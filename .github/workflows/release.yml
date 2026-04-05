@@ -29,6 +29,10 @@ jobs:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
 
+      # Trusted publishing (OIDC) requires npm CLI >= 11.5.1 (see npm trusted-publishers docs).
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@">=11.5.1" && npm --version
+
       - name: Determine npm tag
         id: npm-tag
         run: |
