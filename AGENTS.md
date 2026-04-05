@@ -16,7 +16,7 @@ OpenCode plugin for Qwen OAuth authentication with:
 | File | Purpose |
 |------|---------|
 | `src/index.ts` | Plugin entrypoint |
-| `src/cli/install.ts` | CLI installer (`bunx opencode-qwen-oauth install`) |
+| `src/cli/install.ts` | CLI installer (`bunx opencode-qwencode-oauth install`) |
 | `src/plugin/` | Core plugin logic, account management |
 | `src/qwen/oauth.ts` | OAuth device flow implementation |
 | `src/transform/` | API request/response transformation |

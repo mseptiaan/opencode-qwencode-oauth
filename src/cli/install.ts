@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import prompts from "prompts";
 
-const PLUGIN_NAME = "opencode-qwen-oauth";
+const PLUGIN_NAME = "opencode-qwencode-oauth";
 
 const DEFAULT_PROVIDER_CONFIG = {
   qwen: {
@@ -20,7 +20,24 @@ const DEFAULT_PROVIDER_CONFIG = {
       compatibility: "strict",
     },
     models: {
-      "coder-model": { contextWindow: 1048576, attachment: true },
+      "coder-model": {
+        id: "coder-model",
+        name: "Qwen Coder",
+        limit: {
+          context: 1048576,
+          output: 65536
+        },
+        modalities: {
+          input: [
+            "text",
+            "image"
+          ],
+          output: [
+            "text"
+          ]
+        },
+        attachment: true
+      }
     },
   },
 };
@@ -264,7 +281,7 @@ function printHelp(): void {
   npx ${PLUGIN_NAME} install --global
 
 \x1b[1mMORE INFO:\x1b[0m
-  https://github.com/mseptiaan/opencode-qwen-oauth
+  https://github.com/mseptiaan/opencode-qwencode-oauth
 `);
 }
 

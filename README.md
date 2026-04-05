@@ -1,8 +1,8 @@
 # OpenCode Qwen Auth Plugin
 
-[![npm version](https://img.shields.io/npm/v/opencode-qwen-oauth.svg)](https://www.npmjs.com/package/opencode-qwen-oauth)
-[![npm downloads](https://img.shields.io/npm/dm/opencode-qwen-oauth.svg)](https://www.npmjs.com/package/opencode-qwen-oauth)
-[![CI](https://github.com/mseptiaan/opencode-qwen-oauth/actions/workflows/ci.yml/badge.svg)](https://github.com/mseptiaan/opencode-qwen-oauth/actions)
+[![npm version](https://img.shields.io/npm/v/opencode-qwencode-oauth.svg)](https://www.npmjs.com/package/opencode-qwencode-oauth)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-qwencode-oauth.svg)](https://www.npmjs.com/package/opencode-qwencode-oauth)
+[![CI](https://github.com/mseptiaan/opencode-qwencode-oauth/actions/workflows/ci.yml/badge.svg)](https://github.com/mseptiaan/opencode-qwencode-oauth/actions)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Built with Bun](https://img.shields.io/badge/Built%20with-Bun-black?logo=bun)](https://bun.sh)
 [![Support on Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/fox445353) [![Bitcoin](https://img.shields.io/badge/Bitcoin-000000?logo=bitcoin&logoColor=white)](#-donate-crypto-addresses) [![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?logo=ethereum&logoColor=white)](#-donate-crypto-addresses) [![USDT](https://img.shields.io/badge/USDT-26A17B?logo=tether&logoColor=white)](#-donate-crypto-addresses)
@@ -26,7 +26,7 @@ Qwen OAuth authentication plugin for [OpenCode](https://opencode.ai) with multi-
 Paste this into any LLM agent (Claude Code, OpenCode, Cursor, etc.):
 
 ```
-Install the opencode-qwen-oauth plugin by following: https://raw.githubusercontent.com/mseptiaan/opencode-qwen-oauth/main/README.md
+Install the opencode-qwencode-oauth plugin by following: https://raw.githubusercontent.com/mseptiaan/opencode-qwencode-oauth/main/README.md
 ```
 
 ### Quick Install (Recommended)
@@ -34,9 +34,9 @@ Install the opencode-qwen-oauth plugin by following: https://raw.githubuserconte
 Run one command to automatically configure OpenCode:
 
 ```bash
-bunx opencode-qwen-oauth install
+bunx opencode-qwencode-oauth install
 # or
-npx opencode-qwen-oauth install
+npx opencode-qwencode-oauth install
 ```
 
 This adds the plugin and Qwen provider configuration to your `opencode.json`.
@@ -47,10 +47,10 @@ If you prefer manual setup:
 
 ```bash
 # Using Bun
-bun add opencode-qwen-oauth
+bun add opencode-qwencode-oauth
 
 # Using npm
-npm install opencode-qwen-oauth
+npm install opencode-qwencode-oauth
 ```
 
 Then add to your `opencode.json`:
@@ -58,7 +58,7 @@ Then add to your `opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-qwen-oauth"],
+  "plugin": ["opencode-qwencode-oauth"],
   "provider": {
     "qwen": {
       "npm": "@ai-sdk/openai",
@@ -330,7 +330,7 @@ Planned features and improvements for future releases:
 |---------|-------------|--------|
 | **Circuit Breaker** | Temporarily stop requests to failing accounts after consecutive failures | Planned |
 | **Proactive Health Checks** | Validate tokens before use, not just after failures | Planned |
-| **CLI: Status Command** | `bunx opencode-qwen-oauth status` to show account health and token info | Planned |
+| **CLI: Status Command** | `bunx opencode-qwencode-oauth status` to show account health and token info | Planned |
 
 ### 🟢 Medium-term
 

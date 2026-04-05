@@ -1,5 +1,5 @@
 {
-  "name": "opencode-qwen-oauth",
+  "name": "opencode-qwencode-oauth",
   "version": "0.0.1",
   "description": "Qwen OAuth authentication plugin for OpenCode with multi-account rotation and API translation",
   "main": "./dist/index.js",
@@ -12,18 +12,18 @@
     }
   },
   "bin": {
-    "opencode-qwen-oauth": "./dist/src/cli/install.js"
+    "opencode-qwencode-oauth": "./dist/src/cli/install.js"
   },
   "type": "module",
   "license": "Apache-2.0",
   "author": "OpenCode Qwen Oauth Contributors",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mseptiaan/opencode-qwen-oauth.git"
+    "url": "git+https://github.com/mseptiaan/opencode-qwencode-oauth.git"
   },
-  "homepage": "https://github.com/mseptiaan/opencode-qwen-oauth#readme",
+  "homepage": "https://github.com/mseptiaan/opencode-qwencode-oauth#readme",
   "bugs": {
-    "url": "https://github.com/mseptiaan/opencode-qwen-oauth/issues"
+    "url": "https://github.com/mseptiaan/opencode-qwencode-oauth/issues"
   },
   "keywords": [
     "opencode",

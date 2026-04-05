@@ -1,4 +1,4 @@
-# Contributing to opencode-qwen-oauth
+# Contributing to opencode-qwencode-oauth
 
 Thank you for your interest in contributing!
 
@@ -11,8 +11,8 @@ Thank you for your interest in contributing!
 
 ```bash
 # Clone the repository
-git clone https://github.com/mseptiaan/opencode-qwen-oauth.git
-cd opencode-qwen-oauth
+git clone https://github.com/mseptiaan/opencode-qwencode-oauth.git
+cd opencode-qwencode-oauth
 
 # Install dependencies
 bun install
@@ -27,7 +27,7 @@ bun run build
 ## Project Structure
 
 ```
-opencode-qwen-oauth/
+opencode-qwencode-oauth/
 ├── src/
 │   ├── index.ts              # Plugin entrypoint
 │   ├── plugin/               # Core plugin logic

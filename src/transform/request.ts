@@ -146,7 +146,7 @@ export function transformResponsesToChatCompletions(
       return v.toString(16);
     });
   }
-  const promptId = sessionId + "########0";
+  const promptId = sessionId + "########" + sessionId[sessionId.length - 1];
 
   result.metadata = {
     sessionId: sessionId,

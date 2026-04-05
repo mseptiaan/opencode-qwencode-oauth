@@ -39,7 +39,7 @@ describe("CLI installer", () => {
 
       const config = JSON.parse(readFileSync(result.configPath, "utf-8"));
       expect(config.$schema).toBe("https://opencode.ai/config.json");
-      expect(config.plugin).toContain("opencode-qwen-oauth");
+      expect(config.plugin).toContain("opencode-qwencode-oauth");
       expect(config.provider.qwen).toBeDefined();
     });
 
@@ -60,7 +60,7 @@ describe("CLI installer", () => {
 
       const config = JSON.parse(readFileSync(result.configPath, "utf-8"));
       expect(config.someOtherSetting).toBe(true);
-      expect(config.plugin).toContain("opencode-qwen-oauth");
+      expect(config.plugin).toContain("opencode-qwencode-oauth");
       expect(config.provider.qwen).toBeDefined();
     });
 
@@ -98,14 +98,14 @@ describe("CLI installer", () => {
 
       const config = JSON.parse(readFileSync(result.configPath, "utf-8"));
       expect(config.plugin).toContain("some-other-plugin");
-      expect(config.plugin).toContain("opencode-qwen-oauth");
+      expect(config.plugin).toContain("opencode-qwencode-oauth");
       expect(config.plugin.length).toBe(2);
     });
 
     it("should not duplicate plugin if already installed", () => {
       const existingConfig = {
         $schema: "https://opencode.ai/config.json",
-        plugin: ["opencode-qwen-oauth"],
+        plugin: ["opencode-qwencode-oauth"],
         provider: {
           qwen: {
             npm: "@ai-sdk/openai",
@@ -126,14 +126,14 @@ describe("CLI installer", () => {
 
       const config = JSON.parse(readFileSync(result.configPath, "utf-8"));
       expect(
-        config.plugin.filter((p: string) => p === "opencode-qwen-oauth").length,
+        config.plugin.filter((p: string) => p === "opencode-qwencode-oauth").length,
       ).toBe(1);
     });
 
     it("should detect versioned plugin as already installed", () => {
       const existingConfig = {
         $schema: "https://opencode.ai/config.json",
-        plugin: ["opencode-qwen-oauth@1.0.0"],
+        plugin: ["opencode-qwencode-oauth@1.0.0"],
         provider: {
           qwen: { npm: "@ai-sdk/openai" },
         },
@@ -171,7 +171,7 @@ describe("CLI installer", () => {
     it("should not overwrite existing qwen provider", () => {
       const existingConfig = {
         $schema: "https://opencode.ai/config.json",
-        plugin: ["opencode-qwen-oauth"],
+        plugin: ["opencode-qwencode-oauth"],
         provider: {
           qwen: {
             npm: "@ai-sdk/openai",
@@ -204,7 +204,7 @@ describe("CLI installer", () => {
       expect(result.configPath).toContain("opencode.json");
       const config = JSON.parse(readFileSync(result.configPath, "utf-8"));
       expect(config.someOtherSetting).toBe(true);
-      expect(config.plugin).toContain("opencode-qwen-oauth");
+      expect(config.plugin).toContain("opencode-qwencode-oauth");
     });
 
     it("should add correct provider config", () => {

@@ -1,5 +1,9 @@
 export { transformResponsesToChatCompletions } from "./request";
 export {
+  transformHeader,
+  type TransformHeaderOptions,
+} from "./header";
+export {
   createTransformContext,
   type TransformContext,
   transformChatCompletionsToResponses,

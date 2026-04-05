@@ -4,10 +4,10 @@
 
 ```bash
 # Using Bun (recommended)
-bun add opencode-qwen-oauth
+bun add opencode-qwencode-oauth
 
 # Using npm
-npm install opencode-qwen-oauth
+npm install opencode-qwencode-oauth
 ```
 
 Add to `opencode.json`:
@@ -15,7 +15,7 @@ Add to `opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-qwen-oauth"],
+  "plugin": ["opencode-qwencode-oauth"],
   "provider": {
     "qwen": {
       "models": {

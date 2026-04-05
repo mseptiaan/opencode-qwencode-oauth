@@ -39,6 +39,7 @@ import {
   pollQwenDeviceToken,
   type QwenOAuthOptions,
 } from "./qwen/oauth";
+import { transformHeader } from "./transform/header";
 import { transformResponsesToChatCompletions } from "./transform/request";
 import {
   createTransformContext,
@@ -459,15 +460,6 @@ export const createQwenOAuthPlugin =
                   requestInit = {};
                 }
 
-                if (requestInit && !(requestInit as RequestInit).headers) {
-                  (requestInit as RequestInit).headers = {};
-                }
-
-                const headers = new Headers(requestInit?.headers);
-                if (activeAuth.access) {
-                  headers.set("Authorization", `Bearer ${activeAuth.access}`);
-                }
-
                 const needsResponsesTransform = rawUrl.endsWith("/responses");
                 const finalUrl = rawUrl.replace(
                   /\/responses$/,
@@ -493,6 +485,11 @@ export const createQwenOAuthPlugin =
                     logger.debug("Body parse failed, using original");
                   }
                 }
+
+                const headers = transformHeader(requestInit?.headers, {
+                  accessToken: activeAuth.access,
+                  forceJsonContentType: needsResponsesTransform,
+                });
 
                 logger.debug("Sending request", {
                   url: finalUrl,
