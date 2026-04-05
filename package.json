@@ -12,7 +12,7 @@
     }
   },
   "bin": {
-    "opencode-qwencode-oauth": "./dist/src/cli/install.js"
+    "opencode-qwencode-oauth": "dist/src/cli/install.js"
   },
   "type": "module",
   "license": "Apache-2.0",
@@ -61,7 +61,9 @@
     "test:coverage": "bun test --coverage",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "publish:local": "npm publish --access public",
+    "publish:dry-run": "npm publish --dry-run --access public"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "^1.0.150",

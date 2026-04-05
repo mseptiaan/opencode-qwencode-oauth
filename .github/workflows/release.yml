@@ -44,16 +44,14 @@ jobs:
             echo "tag=latest" >> $GITHUB_OUTPUT
           fi
 
-      # OIDC: no NODE_AUTH_TOKEN (add Trusted Publisher for this package on npmjs.com).
-      # Fallback: add repo secret NPM_TOKEN (granular publish) until OIDC is configured.
-      - name: Publish to npm (OIDC trusted publishing)
-        if: ${{ secrets.NPM_TOKEN == '' }}
-        run: npm publish --access public --tag ${{ steps.npm-tag.outputs.tag }}
-
-      - name: Publish to npm (NPM_TOKEN secret)
-        if: ${{ secrets.NPM_TOKEN != '' }}
+      # OIDC: do not set npm registry auth (configure Trusted Publisher on npm for this package).
+      # Token: set repo secret NPM_TOKEN (granular publish) — shell only applies it when non-empty.
+      # (GitHub forbids `secrets` in `if:` — that invalidates the workflow.)
+      - name: Publish to npm
         run: |
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          fi
           npm publish --access public --tag ${{ steps.npm-tag.outputs.tag }}
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
