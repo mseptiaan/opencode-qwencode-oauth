@@ -3,9 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/opencode-qwencode-oauth.svg)](https://www.npmjs.com/package/opencode-qwencode-oauth)
 [![npm downloads](https://img.shields.io/npm/dm/opencode-qwencode-oauth.svg)](https://www.npmjs.com/package/opencode-qwencode-oauth)
 [![CI](https://github.com/mseptiaan/opencode-qwencode-oauth/actions/workflows/ci.yml/badge.svg)](https://github.com/mseptiaan/opencode-qwencode-oauth/actions)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/github/license/mseptiaan/opencode-qwencode-oauth)](LICENSE)
 [![Built with Bun](https://img.shields.io/badge/Built%20with-Bun-black?logo=bun)](https://bun.sh)
-[![Support on Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/fox445353) [![Bitcoin](https://img.shields.io/badge/Bitcoin-000000?logo=bitcoin&logoColor=white)](#-donate-crypto-addresses) [![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?logo=ethereum&logoColor=white)](#-donate-crypto-addresses) [![USDT](https://img.shields.io/badge/USDT-26A17B?logo=tether&logoColor=white)](#-donate-crypto-addresses)
 
 Qwen OAuth authentication plugin for [OpenCode](https://opencode.ai) with multi-account rotation, proactive token refresh, and automatic API translation.
 
@@ -67,8 +66,24 @@ Then add to your `opencode.json`:
         "compatibility": "strict"
       },
       "models": {
-        "qwen3-coder-plus": {},
-        "qwen3-vl-plus": { "attachment": true }
+        "coder-model": {
+          "id": "coder-model",
+          "name": "Qwen Coder",
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "attachment": true
+        }
       }
     }
   }
@@ -89,77 +104,16 @@ Then add to your `opencode.json`:
    /connect
    ```
 
-   Select **Qwen OAuth** and follow the device flow instructions.
+   Select **Qwen OAuth** or **qwen** and follow the device flow instructions.
 
 3. Start coding with Qwen models:
    ```
-   /model qwen/qwen3-coder-plus
+   /model qwen/coder-model
    ```
 
 ## Configuration
 
 **No configuration required.** The plugin works out of the box with sensible defaults.
-
-To customize behavior, create `.opencode/qwen.json` (project) or `~/.config/opencode/qwen.json` (user-level) with only the options you want to override:
-
-```jsonc
-{
-  // API endpoint (default: https://portal.qwen.ai/v1)
-  "base_url": "https://portal.qwen.ai/v1",
-
-  // OAuth client ID (default: built-in)
-  "client_id": "your-client-id",
-
-  // OAuth server URL (default: https://chat.qwen.ai)
-  "oauth_base_url": "https://chat.qwen.ai",
-
-  // Account rotation: "hybrid", "round-robin", or "sequential" (default: hybrid)
-  "rotation_strategy": "hybrid",
-
-  // Enable PID-based offset for multi-session load distribution (default: false)
-  "pid_offset_enabled": false,
-
-  // Refresh tokens before expiry (default: true)
-  "proactive_refresh": true,
-
-  // Seconds before expiry to trigger refresh (default: 300)
-  "refresh_window_seconds": 300,
-
-  // Maximum wait time when rate limited (default: 300)
-  "max_rate_limit_wait_seconds": 300,
-
-  // Suppress informational messages (default: false)
-  "quiet_mode": true
-}
-```
-
-### Configuration Options
-
-| Option                        | Default                     | Description                                                      |
-| ----------------------------- | --------------------------- | ---------------------------------------------------------------- |
-| `base_url`                    | `https://portal.qwen.ai/v1` | API endpoint for Qwen requests                                   |
-| `client_id`                   | (built-in)                  | OAuth client ID                                                  |
-| `oauth_base_url`              | `https://chat.qwen.ai`      | OAuth server URL                                                 |
-| `rotation_strategy`           | `hybrid`                    | Account rotation: `hybrid`, `round-robin`, or `sequential`       |
-| `pid_offset_enabled`          | `false`                     | Distribute parallel sessions across accounts using PID offset    |
-| `proactive_refresh`           | `true`                      | Refresh tokens before expiry                                     |
-| `refresh_window_seconds`      | `300`                       | Seconds before expiry to trigger refresh                         |
-| `max_rate_limit_wait_seconds` | `300`                       | Maximum wait time when rate limited                              |
-| `quiet_mode`                  | `false`                     | Suppress informational messages                                  |
-
-### Environment Variables
-
-All options can be overridden via environment variables:
-
-- `QWEN_API_BASE_URL`
-- `QWEN_OAUTH_CLIENT_ID`
-- `QWEN_OAUTH_BASE_URL`
-- `QWEN_ROTATION_STRATEGY`
-- `QWEN_PID_OFFSET_ENABLED`
-- `QWEN_PROACTIVE_REFRESH`
-- `QWEN_REFRESH_WINDOW_SECONDS`
-- `QWEN_MAX_RATE_LIMIT_WAIT_SECONDS`
-- `QWEN_QUIET_MODE`
 
 ## Models
 
@@ -167,8 +121,7 @@ All options can be overridden via environment variables:
 
 | Model              | Context Window | Features                     |
 | ------------------ | -------------- | ---------------------------- |
-| `qwen3-coder-plus` | 1M tokens      | Optimized for coding tasks   |
-| `qwen3-vl-plus`    | 256K tokens    | Vision + language multimodal |
+| `coder-model` | 1M tokens      | Last qwen model   |
 
 ## Multi-Account Rotation
 
@@ -310,51 +263,7 @@ npm test
 
 ## License
 
-Apache-2.0
-
-## Roadmap
-
-Planned features and improvements for future releases:
-
-### 🔴 Next Release (v0.4.0)
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Rate Limit Deduplication** | Ignore duplicate 429s within 2s window to prevent backoff cascades | Planned |
-| **Exponential Backoff with Jitter** | Add randomness to retry delays to prevent thundering herd | Planned |
-| **Schema Cleaning** | Remove unsupported JSON Schema keys (`const`, `$ref`, `$defs`) that cause API rejections | Planned |
-
-### 🟡 Short-term (v0.5.0)
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Circuit Breaker** | Temporarily stop requests to failing accounts after consecutive failures | Planned |
-| **Proactive Health Checks** | Validate tokens before use, not just after failures | Planned |
-| **CLI: Status Command** | `bunx opencode-qwencode-oauth status` to show account health and token info | Planned |
-
-### 🟢 Medium-term
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Session Recovery** | Handle `tool_result_missing` errors from interrupted conversations | Research |
-| **CLI: Uninstall Command** | Clean removal from opencode.json | Planned |
-| **Configurable Retry Strategies** | User-selectable aggressive/conservative retry modes | Research |
-
-### 🔵 Future Consideration
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Dual Quota System** | Track separate quotas per API endpoint if Qwen supports | Research |
-| **OAuth Server Fallback** | Try backup auth servers when primary fails | Research |
-| **Rate Limit Prediction** | Use historical patterns to predict when limits will hit | Research |
-
-### ✅ Completed
-
-| Feature | Version | Description |
-|---------|---------|-------------|
-| CLI Installer Safety | v0.3.4 | Preview, backup, `--yes` flag for CI automation |
-| Hybrid Account Rotation | v0.3.0 | Health scores, token bucket, LRU freshness |
-| PID Offset | v0.3.0 | Multi-session load distribution |
+MIT
 
 ---
 
