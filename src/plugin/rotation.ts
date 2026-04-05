@@ -339,12 +339,12 @@ export interface HybridSelectionResult {
 
 /**
  * Calculate hybrid score for an account.
- * Score = (health × 2) + (tokens × 5) + (freshness × 0.1)
+ * Score = (healthScore × 2) + ((tokens / maxTokens) × 100 × 5) + (min(secondsSinceUsed, 3600) × 0.1)
  *
- * Weight breakdown:
- * - Token balance: 50% influence (500 points max)
- * - Health score: 20% influence (200 points max)
- * - Freshness (LRU): 36% influence (360 points max)
+ * Maximum possible component values (total max ≈ 1060 points):
+ * - Health score:    200 pts max  (healthScore [0–100] × 2)          → ~19% influence
+ * - Token balance:   500 pts max  ((tokens/maxTokens) × 100 × 5)     → ~47% influence
+ * - Freshness (LRU): 360 pts max  (min(ageSeconds, 3600) × 0.1)      → ~34% influence
  */
 export function calculateHybridScore(
   account: AccountWithMetrics,

@@ -4,11 +4,13 @@ import {
   type AccountStorage,
   getMinRateLimitWait,
   loadAccounts,
+  loadTrackerState,
   markRateLimited,
   recordFailure,
   recordSuccess,
   type SelectAccountOptions,
   saveAccounts,
+  saveTrackerState,
   selectAccount,
   updateAccount,
   upsertAccount,
@@ -272,6 +274,12 @@ export const createQwenOAuthPlugin =
     setLoggerQuietMode(config.quiet_mode);
     initDebugFromEnv();
     initializeTrackers(config);
+    const existingStorage = await loadAccounts();
+    await loadTrackerState(
+      getHealthTracker(),
+      getTokenTracker(),
+      existingStorage?.accounts,
+    );
 
     const pidOffset = getPidOffset(config);
     logger.debug("Plugin initialized", {
@@ -293,7 +301,7 @@ export const createQwenOAuthPlugin =
           }
 
           let accountStorage = await ensureAuthInStorage(
-            await loadAccounts(),
+            existingStorage ?? (await loadAccounts()),
             auth,
           );
 
@@ -357,7 +365,7 @@ export const createQwenOAuthPlugin =
                 const account = selection.account;
                 const accountIndex = selection.index;
 
-                const authRecord: OAuthAuthDetails = {
+                let activeAuth: OAuthAuthDetails = {
                   type: "oauth",
                   refresh: account.refreshToken,
                   access: account.accessToken,
@@ -369,17 +377,17 @@ export const createQwenOAuthPlugin =
                   ? config.refresh_window_seconds
                   : 0;
                 if (
-                  !authRecord.access ||
-                  accessTokenExpired(authRecord, refreshBuffer)
+                  !activeAuth.access ||
+                  accessTokenExpired(activeAuth, refreshBuffer)
                 ) {
                   logger.debug("Token refresh needed", {
                     accountIndex,
-                    hasAccess: !!authRecord.access,
+                    hasAccess: !!activeAuth.access,
                     proactive: config.proactive_refresh,
                   });
                   try {
                     const refreshed = await refreshAccessToken(
-                      authRecord,
+                      activeAuth,
                       oauthOptions,
                       client,
                       providerId,
@@ -390,6 +398,13 @@ export const createQwenOAuthPlugin =
                     logger.debug("Token refreshed successfully", {
                       accountIndex,
                     });
+                    activeAuth = {
+                      type: "oauth",
+                      refresh: refreshed.refresh,
+                      access: refreshed.access,
+                      expires: refreshed.expires,
+                      resourceUrl: refreshed.resourceUrl ?? account.resourceUrl,
+                    };
                     accountStorage = updateAccount(
                       accountStorage,
                       accountIndex,
@@ -410,12 +425,22 @@ export const createQwenOAuthPlugin =
                       code: refreshError.code,
                     });
                     if (refreshError.code === "invalid_grant") {
+                      logger.debug(
+                        "Refresh token revoked for account, marking as requiresReauth",
+                        { accountIndex },
+                      );
                       accountStorage = updateAccount(
                         accountStorage,
                         accountIndex,
-                        { rateLimitResetAt: Date.now() + 60_000 },
+                        {
+                          requiresReauth: true,
+                          accessToken: undefined,
+                          expires: undefined,
+                        },
                       );
                       await saveAccounts(accountStorage);
+                    } else {
+                      tokenTracker.refund(accountIndex);
                     }
                     attempts += 1;
                     if (attempts >= accountStorage.accounts.length) {
@@ -424,13 +449,6 @@ export const createQwenOAuthPlugin =
                     continue;
                   }
                 }
-
-                const latestAuth = (await getAuth()) as AuthDetails;
-                if (!isOAuthAuth(latestAuth)) {
-                  return fetch(input, init);
-                }
-
-                const activeAuth = latestAuth.access ? latestAuth : authRecord;
 
                 // Get URL from input - OpenCode already constructs full URLs
                 let rawUrl: string;
@@ -578,6 +596,7 @@ export const createQwenOAuthPlugin =
                     healthTracker.recordFailure(accountIndex);
                   }
                   await saveAccounts(accountStorage);
+                  await saveTrackerState(healthTracker, tokenTracker);
                   attempts += 1;
                   if (attempts >= accountStorage.accounts.length) {
                     const waitMs = getMinRateLimitWait(
@@ -600,6 +619,7 @@ export const createQwenOAuthPlugin =
                 accountStorage = recordSuccess(accountStorage, accountIndex);
                 healthTracker.recordSuccess(accountIndex);
                 await saveAccounts(accountStorage);
+                await saveTrackerState(healthTracker, tokenTracker);
                 return response;
               }
             },

@@ -146,7 +146,7 @@ export function transformResponsesToChatCompletions(
       return v.toString(16);
     });
   }
-  const promptId = sessionId + "########" + sessionId[sessionId.length - 1];
+  const promptId = `${sessionId}########${sessionId[sessionId.length - 1]}`;
 
   result.metadata = {
     sessionId: sessionId,
@@ -157,9 +157,14 @@ export function transformResponsesToChatCompletions(
   delete result.store;
   delete result.include;
   delete result.previous_response_id;
-  delete result.tool_choice;
 
-  logger.debug("Transformed request", { body: result });
+  logger.debug("Transformed request", {
+    messagesCount: Array.isArray(result.messages) ? result.messages.length : 0,
+    hasTools: Array.isArray(result.tools) && result.tools.length > 0,
+    toolChoice: result.tool_choice,
+    model: result.model,
+    stream: result.stream,
+  });
 
   return result;
 }

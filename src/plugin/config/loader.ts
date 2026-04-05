@@ -8,15 +8,27 @@ export interface LoadedConfig extends QwenPluginConfig {
 }
 
 function readJsonFile(path: string): Record<string, unknown> | null {
+  let data: string;
   try {
-    const data = readFileSync(path, "utf-8");
+    data = readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+  try {
     return JSON.parse(data) as Record<string, unknown>;
   } catch {
+    process.stderr.write(
+      `[qwen-oauth] Warning: config file contains invalid JSON and will be ignored: ${path}\n`,
+    );
     return null;
   }
 }
 
 function getUserConfigPath(): string {
+  if (process.platform === "win32") {
+    const base = process.env.APPDATA || join(homedir(), "AppData", "Roaming");
+    return join(base, "opencode", "qwen.json");
+  }
   const base = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return join(base, "opencode", "qwen.json");
 }

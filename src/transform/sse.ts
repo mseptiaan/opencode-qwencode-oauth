@@ -276,11 +276,43 @@ export function createSSETransformStream(
         }
       }
     },
-    flush(_controller) {
+    flush(controller) {
       buffer += decoder.decode();
-      if (buffer.trim()) {
-        ctx.logger?.verbose("Flush remaining SSE buffer", {
-          length: buffer.length,
+      const trimmed = buffer.trim();
+      if (!trimmed) return;
+
+      ctx.logger?.verbose("Flush remaining SSE buffer", {
+        length: trimmed.length,
+      });
+
+      if (!trimmed.startsWith("data: ")) return;
+      const data = trimmed.slice(6).trim();
+      if (!data || data === "[DONE]") return;
+
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.model) modelName = parsed.model;
+        const usage = parsed.usage;
+        if (usage) {
+          inputTokens = usage.prompt_tokens ?? inputTokens;
+          outputTokens = usage.completion_tokens ?? outputTokens;
+        }
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          accumulatedText += delta;
+          controller.enqueue(
+            emit({
+              type: "response.output_text.delta",
+              item_id: ctx.itemId,
+              output_index: messageOutputIndex,
+              content_index: 0,
+              delta,
+            }),
+          );
+        }
+      } catch {
+        ctx.logger?.verbose("Flush: malformed SSE data in trailing buffer", {
+          data,
         });
       }
     },
