@@ -216,14 +216,11 @@ describe("CLI installer", () => {
         "https://portal.qwen.ai/v1",
       );
       expect(config.provider.qwen.options.compatibility).toBe("strict");
-      expect(config.provider.qwen.models["qwen3-coder-plus"]).toBeDefined();
-      expect(
-        config.provider.qwen.models["qwen3-coder-plus"].contextWindow,
-      ).toBe(1048576);
-      expect(config.provider.qwen.models["qwen3-vl-plus"]).toBeDefined();
-      expect(config.provider.qwen.models["qwen3-vl-plus"].attachment).toBe(
-        true,
+      expect(config.provider.qwen.models["coder-model"]).toBeDefined();
+      expect(config.provider.qwen.models["coder-model"].limit.context).toBe(
+        1048576,
       );
+      expect(config.provider.qwen.models["coder-model"].attachment).toBe(true);
     });
 
     it("should complete without prompting when skipPrompt is true", async () => {
