@@ -1,57 +1,25 @@
-name: Release
+name: Publish Package
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 permissions:
+  id-token: write # Required for OIDC
   contents: read
-  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v6
         with:
-          bun-version: "latest"
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build
-        run: bun run build
-
-      # Do not set registry-url here: it injects NODE_AUTH_TOKEN from the GitHub token, which is
-      # invalid for registry.npmjs.org and blocks OIDC trusted publishing (npm >= 11.5.1).
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      # Trusted publishing (OIDC) requires npm CLI >= 11.5.1 (see npm trusted-publishers docs).
-      - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@">=11.5.1" && npm --version
-
-      - name: Determine npm tag
-        id: npm-tag
-        run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          if [[ "$VERSION" == *"-"* ]]; then
-            echo "tag=beta" >> $GITHUB_OUTPUT
-          else
-            echo "tag=latest" >> $GITHUB_OUTPUT
-          fi
-
-      # OIDC: do not set npm registry auth (configure Trusted Publisher on npm for this package).
-      # Token: set repo secret NPM_TOKEN (granular publish) — shell only applies it when non-empty.
-      # (GitHub forbids `secrets` in `if:` — that invalidates the workflow.)
-      - name: Publish to npm
-        run: |
-          if [ -n "${NPM_TOKEN:-}" ]; then
-            npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
-          fi
-          npm publish --access public --tag ${{ steps.npm-tag.outputs.tag }}
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - run: npm run build --if-present
+      - run: npm test
+      - run: npm publish
