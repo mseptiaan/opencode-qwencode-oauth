@@ -25,19 +25,14 @@ const DEFAULT_PROVIDER_CONFIG = {
         name: "Qwen Coder",
         limit: {
           context: 1048576,
-          output: 65536
+          output: 65536,
         },
         modalities: {
-          input: [
-            "text",
-            "image"
-          ],
-          output: [
-            "text"
-          ]
+          input: ["text", "image"],
+          output: ["text"],
         },
-        attachment: true
-      }
+        attachment: true,
+      },
     },
   },
 };
@@ -248,10 +243,10 @@ function printSuccess(configPath: string): void {
   console.log("     \x1b[36mopencode\x1b[0m");
   console.log("");
   console.log("  2. Authenticate with Qwen:");
-  console.log("     \\x1b[36m/connect\\x1b[0m");
+  console.log("     \x1b[36m/connect\x1b[0m");
   console.log("");
   console.log("  3. Select a Qwen model:");
-  console.log("     \x1b[36m/model qwen/qwen3-coder-plus\x1b[0m");
+  console.log("     \x1b[36m/model qwen/coder-model\x1b[0m");
   console.log("");
 }
 
@@ -259,7 +254,7 @@ function printAlreadyInstalled(): void {
   console.log("");
   console.log("\x1b[33m⚠\x1b[0m Plugin already installed.");
   console.log("");
-  console.log("  To authenticate, run \\x1b[36m/connect\\x1b[0m in OpenCode.");
+  console.log("  To authenticate, run \x1b[36m/connect\x1b[0m in OpenCode.");
   console.log("");
 }
 

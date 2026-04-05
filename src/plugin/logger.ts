@@ -45,7 +45,12 @@ function getLogStream(): fs.WriteStream {
   return logFileStream;
 }
 
-function writeToFile(level: string, prefix: string, message: string, meta?: Record<string, unknown>): void {
+function writeToFile(
+  level: string,
+  prefix: string,
+  message: string,
+  meta?: Record<string, unknown>,
+): void {
   try {
     const stream = getLogStream();
     const timestamp = new Date().toISOString();

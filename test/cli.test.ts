@@ -126,7 +126,8 @@ describe("CLI installer", () => {
 
       const config = JSON.parse(readFileSync(result.configPath, "utf-8"));
       expect(
-        config.plugin.filter((p: string) => p === "opencode-qwencode-oauth").length,
+        config.plugin.filter((p: string) => p === "opencode-qwencode-oauth")
+          .length,
       ).toBe(1);
     });
 

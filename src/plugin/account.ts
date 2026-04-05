@@ -8,8 +8,10 @@ import {
   type AccountWithMetrics,
   getHealthTracker,
   getTokenTracker,
+  type HealthScoreState,
   type HealthScoreTracker,
   selectHybridAccount,
+  type TokenBucketState,
   type TokenBucketTracker,
 } from "./rotation";
 
@@ -43,6 +45,11 @@ export interface QwenAccount {
   addedAt: number;
   lastUsed: number;
   rateLimitResetAt?: number;
+  /**
+   * When true the refresh token has been rejected (e.g. invalid_grant).
+   * The account is excluded from rotation until the user re-authenticates.
+   */
+  requiresReauth?: boolean;
   health?: AccountHealth;
 }
 
@@ -68,6 +75,93 @@ function getConfigDir(): string {
 
 export function getStoragePath(): string {
   return join(getConfigDir(), "qwen-auth-accounts.json");
+}
+
+export function getTrackerStatePath(): string {
+  return join(getConfigDir(), "qwen-auth-tracker-state.json");
+}
+
+interface TrackerState {
+  version: 1;
+  health: Record<string, HealthScoreState>;
+  tokens: Record<string, TokenBucketState>;
+}
+
+export async function loadTrackerState(
+  healthTracker: HealthScoreTracker,
+  tokenTracker: TokenBucketTracker,
+  accounts?: QwenAccount[],
+): Promise<void> {
+  const path = getTrackerStatePath();
+  let content: string;
+  let loadedFromFile = false;
+  try {
+    content = await fs.readFile(path, "utf-8");
+    const state = JSON.parse(content) as TrackerState;
+    if (state?.version === 1 && state.health && state.tokens) {
+      healthTracker.loadFromJSON(state.health);
+      tokenTracker.loadFromJSON(state.tokens);
+      loadedFromFile = true;
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      process.stderr.write(
+        `[qwen-oauth] Warning: tracker state at ${path} contains invalid JSON and was ignored.\n`,
+      );
+    }
+  }
+
+  // Seed health tracker from persisted account.health when no tracker state file exists.
+  // This bridges the gap on first run or after the tracker state file is missing.
+  if (!loadedFromFile && accounts && accounts.length > 0) {
+    const maxScore = healthTracker.config.maxScore;
+    for (let i = 0; i < accounts.length; i++) {
+      const account = accounts[i];
+      if (!account?.health) continue;
+      const h = account.health;
+      const total = h.successCount + h.failureCount;
+      if (total === 0) continue;
+      const successRate = h.successCount / total;
+      const recencyPenalty = Math.min(h.consecutiveFailures * 0.15, 0.5);
+      const seedScore = Math.max(
+        0,
+        Math.round((successRate - recencyPenalty) * maxScore),
+      );
+      healthTracker.loadFromJSON({
+        [String(i)]: {
+          score: seedScore,
+          lastUpdated: h.lastFailure ?? h.lastSuccess ?? Date.now(),
+          lastSuccess: h.lastSuccess ?? 0,
+          consecutiveFailures: h.consecutiveFailures,
+        },
+      });
+    }
+  }
+}
+
+export async function saveTrackerState(
+  healthTracker: HealthScoreTracker,
+  tokenTracker: TokenBucketTracker,
+): Promise<void> {
+  const path = getTrackerStatePath();
+  const state: TrackerState = {
+    version: 1,
+    health: healthTracker.toJSON(),
+    tokens: tokenTracker.toJSON(),
+  };
+  try {
+    await fs.mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    const tempPath = `${path}.${randomBytes(6).toString("hex")}.tmp`;
+    await fs.writeFile(tempPath, JSON.stringify(state, null, 2), {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+    await fs.rename(tempPath, path);
+    await fs.chmod(path, 0o600);
+  } catch {
+    // Non-critical: tracker state persistence failure does not affect operations
+  }
 }
 
 async function ensureFileExists(path: string): Promise<void> {
@@ -142,23 +236,34 @@ function mergeAccounts(
 }
 
 export async function loadAccounts(): Promise<AccountStorage | null> {
+  const path = getStoragePath();
+  let content: string;
   try {
-    const path = getStoragePath();
-    const content = await fs.readFile(path, "utf-8");
+    content = await fs.readFile(path, "utf-8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+  try {
     const parsed = JSON.parse(content) as AccountStorage;
     if (
       !parsed ||
       parsed.version !== STORAGE_VERSION ||
       !Array.isArray(parsed.accounts)
     ) {
+      process.stderr.write(
+        `[qwen-oauth] Warning: account storage at ${path} has unexpected format and was ignored.\n`,
+      );
       return null;
     }
     return normalizeStorage(parsed);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      return null;
-    }
+  } catch {
+    process.stderr.write(
+      `[qwen-oauth] Warning: account storage at ${path} contains invalid JSON and was ignored.\n`,
+    );
     return null;
   }
 }
@@ -245,7 +350,8 @@ export function selectAccount(
         healthScore: healthTracker.getScore(idx),
         tokens: tokenTracker.getTokens(idx),
         isRateLimited: !!(
-          account.rateLimitResetAt && account.rateLimitResetAt > now
+          account.requiresReauth ||
+          (account.rateLimitResetAt && account.rateLimitResetAt > now)
         ),
       }),
     );
@@ -272,7 +378,10 @@ export function selectAccount(
     const selectedAccount = storage.accounts[selectedIndex];
     if (!selectedAccount) return null;
 
-    tokenTracker.consume(selectedIndex);
+    const consumed = tokenTracker.consume(selectedIndex);
+    if (!consumed) {
+      return null;
+    }
 
     const updatedAccounts = [...storage.accounts];
     updatedAccounts[selectedIndex] = {
@@ -300,6 +409,7 @@ export function selectAccount(
     const index = (startIndex + offset) % total;
     const account = storage.accounts[index];
     if (!account) continue;
+    if (account.requiresReauth) continue;
     if (account.rateLimitResetAt && account.rateLimitResetAt > now) {
       continue;
     }
