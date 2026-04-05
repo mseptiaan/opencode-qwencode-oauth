@@ -30,29 +30,7 @@ Install the opencode-qwencode-oauth plugin by following: https://raw.githubuserc
 
 ### Quick Install (Recommended)
 
-Run one command to automatically configure OpenCode:
-
-```bash
-bunx opencode-qwencode-oauth install
-# or
-npx opencode-qwencode-oauth install
-```
-
-This adds the plugin and Qwen provider configuration to your `opencode.json`.
-
-### Manual Installation
-
-If you prefer manual setup:
-
-```bash
-# Using Bun
-bun add opencode-qwencode-oauth
-
-# Using npm
-npm install opencode-qwencode-oauth
-```
-
-Then add to your `opencode.json`:
+Add to your `opencode.json`:
 
 ```json
 {
