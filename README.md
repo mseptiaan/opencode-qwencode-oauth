@@ -6,6 +6,9 @@
 [![License: MIT](https://img.shields.io/github/license/mseptiaan/opencode-qwencode-oauth)](LICENSE)
 [![Built with Bun](https://img.shields.io/badge/Built%20with-Bun-black?logo=bun)](https://bun.sh)
 
+<img width="931" height="486" alt="image" src="https://github.com/user-attachments/assets/e073d8b4-9e50-4286-982f-a4e1995aa3ce" />
+
+
 Qwen OAuth authentication plugin for [OpenCode](https://opencode.ai) with multi-account rotation, proactive token refresh, and automatic API translation.
 
 ## Features
