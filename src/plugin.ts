@@ -424,7 +424,13 @@ export const createQwenOAuthPlugin =
                       accountIndex,
                       code: refreshError.code,
                     });
-                    if (refreshError.code === "invalid_grant") {
+                    const permanentTokenErrors = [
+                      "invalid_grant",
+                      "invalid_token",
+                    ];
+                    if (
+                      permanentTokenErrors.includes(refreshError.code ?? "")
+                    ) {
                       logger.debug(
                         "Refresh token revoked for account, marking as requiresReauth",
                         { accountIndex },
@@ -439,14 +445,13 @@ export const createQwenOAuthPlugin =
                         },
                       );
                       await saveAccounts(accountStorage);
-                    } else {
-                      tokenTracker.refund(accountIndex);
+                      attempts += 1;
+                      if (attempts >= accountStorage.accounts.length) {
+                        throw error;
+                      }
+                      continue;
                     }
-                    attempts += 1;
-                    if (attempts >= accountStorage.accounts.length) {
-                      throw error;
-                    }
-                    continue;
+                    throw error;
                   }
                 }
 

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import lockfile from "proper-lockfile";
+import { isValidOAuthRefreshToken } from "./auth";
 import type { RotationStrategy } from "./config/schema";
 import {
   type AccountWithMetrics,
@@ -14,6 +14,76 @@ import {
   type TokenBucketState,
   type TokenBucketTracker,
 } from "./rotation";
+
+/**
+ * Acquire an exclusive file lock using atomic mkdir (same technique as
+ * proper-lockfile). Returns a release function.
+ */
+async function acquireFileLock(
+  filePath: string,
+  opts: {
+    stale: number;
+    retries: {
+      retries: number;
+      minTimeout: number;
+      maxTimeout: number;
+      factor: number;
+    };
+  },
+): Promise<() => Promise<void>> {
+  const lockDir = `${filePath}.lock`;
+  const pidFile = join(lockDir, "pid");
+  const { stale, retries: r } = opts;
+  let attempt = 0;
+  let delay = r.minTimeout;
+
+  for (; ;) {
+    try {
+      await fs.mkdir(lockDir);
+      await fs
+        .writeFile(
+          pidFile,
+          JSON.stringify({ pid: process.pid, time: Date.now() }),
+          "utf-8",
+        )
+        .catch(() => undefined);
+      return async () => {
+        await fs
+          .rm(lockDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") throw err;
+
+      // Check staleness using directory mtime (available immediately after mkdir)
+      // This avoids race condition where pid file hasn't been written yet
+      try {
+        const stat = await fs.stat(lockDir);
+        const lockAge = Date.now() - stat.mtimeMs;
+        if (lockAge > stale) {
+          await fs
+            .rm(lockDir, { recursive: true, force: true })
+            .catch(() => undefined);
+          continue;
+        }
+      } catch {
+        await fs
+          .rm(lockDir, { recursive: true, force: true })
+          .catch(() => undefined);
+        continue;
+      }
+
+      if (attempt >= r.retries) {
+        throw new Error(
+          `[qwen-oauth] Could not acquire lock on ${filePath} after ${r.retries} attempts`,
+        );
+      }
+      await new Promise<void>((res) => setTimeout(res, delay));
+      delay = Math.min(delay * r.factor, r.maxTimeout);
+      attempt++;
+    }
+  }
+}
 
 export type { RotationStrategy } from "./config/schema";
 
@@ -185,14 +255,9 @@ async function ensureFileExists(path: string): Promise<void> {
 
 async function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
   await ensureFileExists(path);
-  const release = await lockfile.lock(path, {
+  const release = await acquireFileLock(path, {
     stale: 10000,
-    retries: {
-      retries: 5,
-      minTimeout: 100,
-      maxTimeout: 1000,
-      factor: 2,
-    },
+    retries: { retries: 5, minTimeout: 100, maxTimeout: 1000, factor: 2 },
   });
   try {
     return await fn();
@@ -202,7 +267,9 @@ async function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
 }
 
 function normalizeStorage(storage: AccountStorage): AccountStorage {
-  const accounts = storage.accounts.filter((account) => account?.refreshToken);
+  const accounts = storage.accounts.filter((account) =>
+    isValidOAuthRefreshToken(account?.refreshToken),
+  );
   const activeIndex =
     accounts.length > 0
       ? Math.min(Math.max(storage.activeIndex, 0), accounts.length - 1)
