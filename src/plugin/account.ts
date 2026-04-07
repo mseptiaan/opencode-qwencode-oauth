@@ -31,6 +31,7 @@ async function acquireFileLock(
   },
 ): Promise<() => Promise<void>> {
   const lockDir = `${filePath}.lock`;
+  const pidFile = join(lockDir, "pid");
   const { stale, retries: r } = opts;
   let attempt = 0;
   let delay = r.minTimeout;
@@ -40,7 +41,7 @@ async function acquireFileLock(
       await fs.mkdir(lockDir);
       await fs
         .writeFile(
-          join(lockDir, "pid"),
+          pidFile,
           JSON.stringify({ pid: process.pid, time: Date.now() }),
           "utf-8",
         )
@@ -54,18 +55,18 @@ async function acquireFileLock(
       const e = err as NodeJS.ErrnoException;
       if (e.code !== "EEXIST") throw e;
 
-      // Evict stale lock
+      // Check staleness using directory mtime (available immediately after mkdir)
+      // This avoids race condition where pid file hasn't been written yet
       try {
-        const raw = await fs.readFile(join(lockDir, "pid"), "utf-8");
-        const info = JSON.parse(raw) as { time: number };
-        if (Date.now() - info.time > stale) {
+        const stat = await fs.stat(lockDir);
+        const lockAge = Date.now() - stat.mtimeMs;
+        if (lockAge > stale) {
           await fs
             .rm(lockDir, { recursive: true, force: true })
             .catch(() => undefined);
           continue;
         }
       } catch {
-        // Unreadable pid file — treat as stale
         await fs
           .rm(lockDir, { recursive: true, force: true })
           .catch(() => undefined);
@@ -74,7 +75,7 @@ async function acquireFileLock(
 
       if (attempt >= r.retries) {
         throw new Error(
-          `[qwen-oauth] Could not acquire lock on ${filePath} after ${attempt} attempts`,
+          `[qwen-oauth] Could not acquire lock on ${filePath} after ${r.retries} attempts`,
         );
       }
       await new Promise<void>((res) => setTimeout(res, delay));
