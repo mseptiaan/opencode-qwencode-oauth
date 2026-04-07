@@ -151,6 +151,22 @@ export class HealthScoreTracker {
   }
 
   /**
+   * Drop state for removed account and shift higher indices down to match storage order.
+   */
+  removeAccountAt(removedIndex: number): void {
+    const next = new Map<number, HealthScoreState>();
+    for (const [idx, state] of this.scores) {
+      if (idx === removedIndex) continue;
+      const newIdx = idx > removedIndex ? idx - 1 : idx;
+      next.set(newIdx, state);
+    }
+    this.scores.clear();
+    for (const [idx, state] of next) {
+      this.scores.set(idx, state);
+    }
+  }
+
+  /**
    * Export state for persistence.
    */
   toJSON(): Record<string, HealthScoreState> {
@@ -279,6 +295,22 @@ export class TokenBucketTracker {
       tokens: Math.min(this.config.maxTokens, current + amount),
       lastUpdated: Date.now(),
     });
+  }
+
+  /**
+   * Drop bucket for removed account and shift higher indices down to match storage order.
+   */
+  removeAccountAt(removedIndex: number): void {
+    const next = new Map<number, TokenBucketState>();
+    for (const [idx, state] of this.buckets) {
+      if (idx === removedIndex) continue;
+      const newIdx = idx > removedIndex ? idx - 1 : idx;
+      next.set(newIdx, state);
+    }
+    this.buckets.clear();
+    for (const [idx, state] of next) {
+      this.buckets.set(idx, state);
+    }
   }
 
   /**

@@ -77,6 +77,7 @@ export function initDebugFromEnv(): void {
     debugLevel = 1;
   } else if (envDebug === "2") {
     debugLevel = 2;
+    console.log("Debug level set to 2");
   } else if (process.env.DEBUG?.includes("qwen")) {
     debugLevel = 1;
   }

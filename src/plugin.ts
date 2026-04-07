@@ -220,6 +220,23 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function deleteAccount(storage: AccountStorage, index: number): AccountStorage {
+  if (index < 0 || index >= storage.accounts.length) {
+    return storage;
+  }
+  const accounts = storage.accounts.filter((_, i) => i !== index);
+  if (accounts.length === 0) {
+    return { version: 1, accounts: [], activeIndex: 0 };
+  }
+  let activeIndex = storage.activeIndex;
+  if (index < activeIndex) {
+    activeIndex -= 1;
+  } else if (index === activeIndex) {
+    activeIndex = Math.min(activeIndex, accounts.length - 1);
+  }
+  return { version: 1, accounts, activeIndex };
+}
+
 async function ensureAuthInStorage(
   storage: AccountStorage | null,
   auth: OAuthAuthDetails,
@@ -242,22 +259,22 @@ function initializeTrackers(config: LoadedConfig): void {
   initHealthTracker(
     config.health_score
       ? {
-          initial: config.health_score.initial,
-          successReward: config.health_score.success_reward,
-          rateLimitPenalty: config.health_score.rate_limit_penalty,
-          failurePenalty: config.health_score.failure_penalty,
-          recoveryRatePerHour: config.health_score.recovery_rate_per_hour,
-          minUsable: config.health_score.min_usable,
-        }
+        initial: config.health_score.initial,
+        successReward: config.health_score.success_reward,
+        rateLimitPenalty: config.health_score.rate_limit_penalty,
+        failurePenalty: config.health_score.failure_penalty,
+        recoveryRatePerHour: config.health_score.recovery_rate_per_hour,
+        minUsable: config.health_score.min_usable,
+      }
       : undefined,
   );
   initTokenTracker(
     config.token_bucket
       ? {
-          maxTokens: config.token_bucket.max_tokens,
-          regenerationRatePerMinute:
-            config.token_bucket.regeneration_rate_per_minute,
-        }
+        maxTokens: config.token_bucket.max_tokens,
+        regenerationRatePerMinute:
+          config.token_bucket.regeneration_rate_per_minute,
+      }
       : undefined,
   );
 }
@@ -269,402 +286,422 @@ function getPidOffset(config: LoadedConfig): number {
 
 export const createQwenOAuthPlugin =
   (providerId: string): Plugin =>
-  async ({ client, directory }: PluginContext) => {
-    const config = loadConfig(directory);
-    setLoggerQuietMode(config.quiet_mode);
-    initDebugFromEnv();
-    initializeTrackers(config);
-    const existingStorage = await loadAccounts();
-    await loadTrackerState(
-      getHealthTracker(),
-      getTokenTracker(),
-      existingStorage?.accounts,
-    );
+    async ({ client, directory }: PluginContext) => {
+      const config = loadConfig(directory);
+      setLoggerQuietMode(config.quiet_mode);
+      initDebugFromEnv();
+      initializeTrackers(config);
+      const existingStorage = await loadAccounts();
+      await loadTrackerState(
+        getHealthTracker(),
+        getTokenTracker(),
+        existingStorage?.accounts,
+      );
 
-    const pidOffset = getPidOffset(config);
-    logger.debug("Plugin initialized", {
-      providerId,
-      directory,
-      strategy: config.rotation_strategy,
-      pidOffset: config.pid_offset_enabled ? pidOffset : "disabled",
-    });
+      const pidOffset = getPidOffset(config);
+      logger.debug("Plugin initialized", {
+        providerId,
+        directory,
+        strategy: config.rotation_strategy,
+        pidOffset: config.pid_offset_enabled ? pidOffset : "disabled",
+      });
 
-    const oauthOptions = buildOAuthOptions(config);
+      const oauthOptions = buildOAuthOptions(config);
 
-    return {
-      auth: {
-        provider: providerId,
-        async loader(getAuth: GetAuth, provider: Provider) {
-          const auth = (await getAuth()) as AuthDetails;
-          if (!isOAuthAuth(auth)) {
-            return {};
-          }
+      return {
+        auth: {
+          provider: providerId,
+          async loader(getAuth: GetAuth, provider: Provider) {
+            const auth = (await getAuth()) as AuthDetails;
+            if (!isOAuthAuth(auth)) {
+              return {};
+            }
 
-          let accountStorage = await ensureAuthInStorage(
-            existingStorage ?? (await loadAccounts()),
-            auth,
-          );
+            let accountStorage = await ensureAuthInStorage(
+              existingStorage ?? (await loadAccounts()),
+              auth,
+            );
 
-          if (provider.models) {
-            for (const model of Object.values(provider.models)) {
-              if (model) {
-                model.cost = {
-                  input: 0,
-                  output: 0,
-                  cache: { read: 0, write: 0 },
-                };
+            if (provider.models) {
+              for (const model of Object.values(provider.models)) {
+                if (model) {
+                  model.cost = {
+                    input: 0,
+                    output: 0,
+                    cache: { read: 0, write: 0 },
+                  };
+                }
               }
             }
-          }
 
-          return {
-            apiKey: "",
-            fetch: async (
-              input: RequestInfo | URL,
-              init?: RequestInit,
-            ): Promise<Response> => {
-              let attempts = 0;
-              const healthTracker = getHealthTracker();
-              const tokenTracker = getTokenTracker();
-              const selectOptions: SelectAccountOptions = {
-                healthTracker,
-                tokenTracker,
-                pidOffset,
-              };
-
-              while (true) {
-                const now = Date.now();
-                const selection = selectAccount(
-                  accountStorage,
-                  config.rotation_strategy,
-                  now,
-                  selectOptions,
-                );
-
-                if (!selection) {
-                  const waitMs = getMinRateLimitWait(accountStorage, now);
-                  if (!waitMs) {
-                    throw new Error(
-                      "No available Qwen OAuth accounts. Re-authenticate to continue.",
-                    );
-                  }
-
-                  const maxWaitMs =
-                    (config.max_rate_limit_wait_seconds ?? 0) * 1000;
-                  if (maxWaitMs > 0 && waitMs > maxWaitMs) {
-                    throw new Error(
-                      "All Qwen OAuth accounts are rate-limited. Try again later.",
-                    );
-                  }
-
-                  await sleep(waitMs);
-                  continue;
-                }
-
-                accountStorage = selection.storage;
-                const account = selection.account;
-                const accountIndex = selection.index;
-
-                let activeAuth: OAuthAuthDetails = {
-                  type: "oauth",
-                  refresh: account.refreshToken,
-                  access: account.accessToken,
-                  expires: account.expires,
-                  resourceUrl: account.resourceUrl,
+            return {
+              apiKey: "",
+              fetch: async (
+                input: RequestInfo | URL,
+                init?: RequestInit,
+              ): Promise<Response> => {
+                let attempts = 0;
+                const healthTracker = getHealthTracker();
+                const tokenTracker = getTokenTracker();
+                const selectOptions: SelectAccountOptions = {
+                  healthTracker,
+                  tokenTracker,
+                  pidOffset,
                 };
 
-                const refreshBuffer = config.proactive_refresh
-                  ? config.refresh_window_seconds
-                  : 0;
-                if (
-                  !activeAuth.access ||
-                  accessTokenExpired(activeAuth, refreshBuffer)
-                ) {
-                  logger.debug("Token refresh needed", {
-                    accountIndex,
-                    hasAccess: !!activeAuth.access,
-                    proactive: config.proactive_refresh,
-                  });
-                  try {
-                    const refreshed = await refreshAccessToken(
-                      activeAuth,
-                      oauthOptions,
-                      client,
-                      providerId,
-                    );
-                    if (!refreshed) {
-                      throw new Error("Token refresh failed");
-                    }
-                    logger.debug("Token refreshed successfully", {
-                      accountIndex,
-                    });
-                    activeAuth = {
-                      type: "oauth",
-                      refresh: refreshed.refresh,
-                      access: refreshed.access,
-                      expires: refreshed.expires,
-                      resourceUrl: refreshed.resourceUrl ?? account.resourceUrl,
-                    };
-                    accountStorage = updateAccount(
-                      accountStorage,
-                      accountIndex,
-                      {
-                        refreshToken: refreshed.refresh,
-                        accessToken: refreshed.access,
-                        expires: refreshed.expires,
-                        resourceUrl:
-                          refreshed.resourceUrl ?? account.resourceUrl,
-                        lastUsed: now,
-                      },
-                    );
-                    await saveAccounts(accountStorage);
-                  } catch (error) {
-                    const refreshError = error as QwenTokenRefreshError;
-                    logger.debug("Token refresh failed", {
-                      accountIndex,
-                      code: refreshError.code,
-                    });
-                    if (refreshError.code === "invalid_grant") {
-                      logger.debug(
-                        "Refresh token revoked for account, marking as requiresReauth",
-                        { accountIndex },
+                while (true) {
+                  const now = Date.now();
+                  const selection = selectAccount(
+                    accountStorage,
+                    config.rotation_strategy,
+                    now,
+                    selectOptions,
+                  );
+
+                  if (!selection) {
+                    const waitMs = getMinRateLimitWait(accountStorage, now);
+                    if (!waitMs) {
+                      throw new Error(
+                        "No available Qwen OAuth accounts. Re-authenticate to continue.",
                       );
+                    }
+
+                    const maxWaitMs =
+                      (config.max_rate_limit_wait_seconds ?? 0) * 1000;
+                    if (maxWaitMs > 0 && waitMs > maxWaitMs) {
+                      throw new Error(
+                        "All Qwen OAuth accounts are rate-limited. Try again later.",
+                      );
+                    }
+
+                    await sleep(waitMs);
+                    continue;
+                  }
+
+                  accountStorage = selection.storage;
+                  const account = selection.account;
+                  const accountIndex = selection.index;
+
+                  let activeAuth: OAuthAuthDetails = {
+                    type: "oauth",
+                    refresh: account.refreshToken,
+                    access: account.accessToken,
+                    expires: account.expires,
+                    resourceUrl: account.resourceUrl,
+                  };
+
+                  const refreshBuffer = config.proactive_refresh
+                    ? config.refresh_window_seconds
+                    : 0;
+                  if (
+                    !activeAuth.access ||
+                    accessTokenExpired(activeAuth, refreshBuffer)
+                  ) {
+                    logger.debug("Token refresh needed", {
+                      accountIndex,
+                      hasAccess: !!activeAuth.access,
+                      proactive: config.proactive_refresh,
+                    });
+                    try {
+                      logger.debug("Refreshing token", {
+                        activeAuth,
+                        oauthOptions,
+                        client,
+                        providerId,
+                      });
+                      const refreshed = await refreshAccessToken(
+                        activeAuth,
+                        oauthOptions,
+                        client,
+                        providerId,
+                      );
+                      if (!refreshed) {
+                        throw new Error("Token refresh failed");
+                      }
+                      logger.debug("Token refreshed successfully", {
+                        accountIndex,
+                      });
+                      activeAuth = {
+                        type: "oauth",
+                        refresh: refreshed.refresh,
+                        access: refreshed.access,
+                        expires: refreshed.expires,
+                        resourceUrl: refreshed.resourceUrl ?? account.resourceUrl,
+                      };
                       accountStorage = updateAccount(
                         accountStorage,
                         accountIndex,
                         {
-                          requiresReauth: true,
-                          accessToken: undefined,
-                          expires: undefined,
+                          refreshToken: refreshed.refresh,
+                          accessToken: refreshed.access,
+                          expires: refreshed.expires,
+                          resourceUrl:
+                            refreshed.resourceUrl ?? account.resourceUrl,
+                          lastUsed: now,
                         },
                       );
                       await saveAccounts(accountStorage);
-                    } else {
-                      tokenTracker.refund(accountIndex);
+                    } catch (error) {
+                      const refreshError = error as QwenTokenRefreshError;
+                      logger.debug("Token refresh failed", {
+                        accountIndex,
+                        code: refreshError.code,
+                      });
+                      if (refreshError.code === "invalid_grant") {
+                        logger.debug(
+                          "Refresh token revoked for account, marking as requiresReauth",
+                          { accountIndex },
+                        );
+                        accountStorage = updateAccount(
+                          accountStorage,
+                          accountIndex,
+                          {
+                            requiresReauth: true,
+                            accessToken: undefined,
+                            expires: undefined,
+                          },
+                        );
+                        await saveAccounts(accountStorage);
+                        attempts += 1;
+                        if (attempts >= accountStorage.accounts.length) {
+                          throw error;
+                        }
+                        continue;
+                      }
+                      logger.debug("Removing account after refresh failure", {
+                        accountIndex,
+                        code: refreshError.code,
+                      });
+                      accountStorage = deleteAccount(
+                        accountStorage,
+                        accountIndex,
+                      );
+                      await saveAccounts(accountStorage);
+                      healthTracker.removeAccountAt(accountIndex);
+                      tokenTracker.removeAccountAt(accountIndex);
+                      await saveTrackerState(healthTracker, tokenTracker);
+                      if (accountStorage.accounts.length === 0) {
+                        throw error;
+                      }
+                      continue;
                     }
-                    attempts += 1;
-                    if (attempts >= accountStorage.accounts.length) {
-                      throw error;
-                    }
-                    continue;
                   }
-                }
 
-                // Get URL from input - OpenCode already constructs full URLs
-                let rawUrl: string;
-                if (typeof input === "string") {
-                  rawUrl = input;
-                } else if (input instanceof URL) {
-                  rawUrl = input.toString();
-                } else {
-                  rawUrl = input.url;
-                }
+                  // Get URL from input - OpenCode already constructs full URLs
+                  let rawUrl: string;
+                  if (typeof input === "string") {
+                    rawUrl = input;
+                  } else if (input instanceof URL) {
+                    rawUrl = input.toString();
+                  } else {
+                    rawUrl = input.url;
+                  }
 
-                // Sanitize malformed URLs (e.g., "undefined/path")
-                rawUrl = sanitizeMalformedUrl(rawUrl);
+                  // Sanitize malformed URLs (e.g., "undefined/path")
+                  rawUrl = sanitizeMalformedUrl(rawUrl);
 
-                let requestInit =
-                  init ??
-                  (input instanceof Request
-                    ? {
+                  let requestInit =
+                    init ??
+                    (input instanceof Request
+                      ? {
                         method: input.method,
                         headers: input.headers,
                         body: input.body,
                         signal: input.signal,
                       }
-                    : undefined);
+                      : undefined);
 
-                if (!requestInit && !(input instanceof Request)) {
-                  requestInit = {};
-                }
+                  if (!requestInit && !(input instanceof Request)) {
+                    requestInit = {};
+                  }
 
-                const needsResponsesTransform = rawUrl.endsWith("/responses");
-                const finalUrl = rawUrl.replace(
-                  /\/responses$/,
-                  "/chat/completions",
-                );
+                  const needsResponsesTransform = rawUrl.endsWith("/responses");
+                  const finalUrl = rawUrl.replace(
+                    /\/responses$/,
+                    "/chat/completions",
+                  );
 
-                const finalInit = { ...requestInit };
-                if (needsResponsesTransform && requestInit?.body) {
-                  try {
-                    const bodyStr =
-                      typeof requestInit.body === "string"
-                        ? requestInit.body
-                        : await new Response(requestInit.body).text();
-                    const body = JSON.parse(bodyStr);
-                    const transformed =
-                      transformResponsesToChatCompletions(body);
-                    finalInit.body = JSON.stringify(transformed);
-                    logger.verbose("Transformed request body", {
-                      messagesCount: transformed.messages?.length,
-                      hasTools: !!transformed.tools,
+                  const finalInit = { ...requestInit };
+                  if (needsResponsesTransform && requestInit?.body) {
+                    try {
+                      const bodyStr =
+                        typeof requestInit.body === "string"
+                          ? requestInit.body
+                          : await new Response(requestInit.body).text();
+                      const body = JSON.parse(bodyStr);
+                      const transformed =
+                        transformResponsesToChatCompletions(body);
+                      finalInit.body = JSON.stringify(transformed);
+                      logger.verbose("Transformed request body", {
+                        messagesCount: transformed.messages?.length,
+                        hasTools: !!transformed.tools,
+                      });
+                    } catch {
+                      logger.debug("Body parse failed, using original");
+                    }
+                  }
+
+                  const headers = transformHeader(requestInit?.headers, {
+                    accessToken: activeAuth.access,
+                    forceJsonContentType: needsResponsesTransform,
+                  });
+
+                  logger.debug("Sending request", {
+                    url: finalUrl,
+                    method: finalInit.method ?? "POST",
+                    needsTransform: needsResponsesTransform,
+                  });
+
+                  const response = await fetch(finalUrl, {
+                    ...finalInit,
+                    headers,
+                  });
+
+                  logger.debug("Response received", {
+                    status: response.status,
+                    contentType: response.headers.get("content-type"),
+                  });
+
+                  // Transform streaming response from Chat Completions to Responses API format
+                  if (
+                    needsResponsesTransform &&
+                    response.ok &&
+                    response.body &&
+                    response.headers
+                      .get("content-type")
+                      ?.includes("text/event-stream")
+                  ) {
+                    const sseCtx = createSSETransformContext(logger);
+                    const transformStream = createSSETransformStream(sseCtx);
+                    const transformedBody =
+                      response.body.pipeThrough(transformStream);
+                    return new Response(transformedBody, {
+                      status: response.status,
+                      statusText: response.statusText,
+                      headers: response.headers,
                     });
-                  } catch {
-                    logger.debug("Body parse failed, using original");
                   }
-                }
 
-                const headers = transformHeader(requestInit?.headers, {
-                  accessToken: activeAuth.access,
-                  forceJsonContentType: needsResponsesTransform,
-                });
+                  if (
+                    needsResponsesTransform &&
+                    response.ok &&
+                    !response.headers
+                      .get("content-type")
+                      ?.includes("text/event-stream")
+                  ) {
+                    logger.debug("Transforming non-streaming response");
+                    const chatBody = await response.json();
+                    const ctx = createTransformContext();
+                    const responsesBody = transformChatCompletionsToResponses(
+                      chatBody,
+                      ctx,
+                    );
 
-                logger.debug("Sending request", {
-                  url: finalUrl,
-                  method: finalInit.method ?? "POST",
-                  needsTransform: needsResponsesTransform,
-                });
-
-                const response = await fetch(finalUrl, {
-                  ...finalInit,
-                  headers,
-                });
-
-                logger.debug("Response received", {
-                  status: response.status,
-                  contentType: response.headers.get("content-type"),
-                });
-
-                // Transform streaming response from Chat Completions to Responses API format
-                if (
-                  needsResponsesTransform &&
-                  response.ok &&
-                  response.body &&
-                  response.headers
-                    .get("content-type")
-                    ?.includes("text/event-stream")
-                ) {
-                  const sseCtx = createSSETransformContext(logger);
-                  const transformStream = createSSETransformStream(sseCtx);
-                  const transformedBody =
-                    response.body.pipeThrough(transformStream);
-                  return new Response(transformedBody, {
-                    status: response.status,
-                    statusText: response.statusText,
-                    headers: response.headers,
-                  });
-                }
-
-                if (
-                  needsResponsesTransform &&
-                  response.ok &&
-                  !response.headers
-                    .get("content-type")
-                    ?.includes("text/event-stream")
-                ) {
-                  logger.debug("Transforming non-streaming response");
-                  const chatBody = await response.json();
-                  const ctx = createTransformContext();
-                  const responsesBody = transformChatCompletionsToResponses(
-                    chatBody,
-                    ctx,
-                  );
-
-                  return new Response(JSON.stringify(responsesBody), {
-                    status: response.status,
-                    statusText: response.statusText,
-                    headers: new Headers({
-                      "content-type": "application/json",
-                    }),
-                  });
-                }
-
-                if (response.status === 429 || response.status >= 500) {
-                  const reason = parseRateLimitReason(response);
-                  const headerMs = extractRetryAfterMs(response);
-                  const tieredMs = getBackoffMs(reason, attempts);
-                  const retryAfterMs = headerMs ?? tieredMs;
-
-                  logger.debug("Rate limited or server error", {
-                    status: response.status,
-                    reason,
-                    accountIndex,
-                    retryAfterMs,
-                    attempts,
-                    totalAccounts: accountStorage.accounts.length,
-                  });
-
-                  accountStorage = markRateLimited(
-                    accountStorage,
-                    accountIndex,
-                    retryAfterMs,
-                  );
-                  accountStorage = recordFailure(accountStorage, accountIndex);
-                  if (response.status === 429) {
-                    healthTracker.recordRateLimit(accountIndex);
-                  } else {
-                    healthTracker.recordFailure(accountIndex);
+                    return new Response(JSON.stringify(responsesBody), {
+                      status: response.status,
+                      statusText: response.statusText,
+                      headers: new Headers({
+                        "content-type": "application/json",
+                      }),
+                    });
                   }
+
+                  if (response.status === 429 || response.status >= 500) {
+                    const reason = parseRateLimitReason(response);
+                    const headerMs = extractRetryAfterMs(response);
+                    const tieredMs = getBackoffMs(reason, attempts);
+                    const retryAfterMs = headerMs ?? tieredMs;
+
+                    logger.debug("Rate limited or server error", {
+                      status: response.status,
+                      reason,
+                      accountIndex,
+                      retryAfterMs,
+                      attempts,
+                      totalAccounts: accountStorage.accounts.length,
+                    });
+
+                    accountStorage = markRateLimited(
+                      accountStorage,
+                      accountIndex,
+                      retryAfterMs,
+                    );
+                    accountStorage = recordFailure(accountStorage, accountIndex);
+                    if (response.status === 429) {
+                      healthTracker.recordRateLimit(accountIndex);
+                    } else {
+                      healthTracker.recordFailure(accountIndex);
+                    }
+                    await saveAccounts(accountStorage);
+                    await saveTrackerState(healthTracker, tokenTracker);
+                    attempts += 1;
+                    if (attempts >= accountStorage.accounts.length) {
+                      const waitMs = getMinRateLimitWait(
+                        accountStorage,
+                        Date.now(),
+                      );
+                      if (waitMs) {
+                        logger.debug("All accounts rate limited, waiting", {
+                          waitMs,
+                        });
+                        await sleep(waitMs);
+                        attempts = 0;
+                        continue;
+                      }
+                      return response;
+                    }
+                    continue;
+                  }
+
+                  accountStorage = recordSuccess(accountStorage, accountIndex);
+                  healthTracker.recordSuccess(accountIndex);
                   await saveAccounts(accountStorage);
                   await saveTrackerState(healthTracker, tokenTracker);
-                  attempts += 1;
-                  if (attempts >= accountStorage.accounts.length) {
-                    const waitMs = getMinRateLimitWait(
-                      accountStorage,
-                      Date.now(),
-                    );
-                    if (waitMs) {
-                      logger.debug("All accounts rate limited, waiting", {
-                        waitMs,
-                      });
-                      await sleep(waitMs);
-                      attempts = 0;
-                      continue;
-                    }
-                    return response;
-                  }
-                  continue;
+                  return response;
                 }
-
-                accountStorage = recordSuccess(accountStorage, accountIndex);
-                healthTracker.recordSuccess(accountIndex);
-                await saveAccounts(accountStorage);
-                await saveTrackerState(healthTracker, tokenTracker);
-                return response;
-              }
-            },
-          };
-        },
-        methods: [
-          {
-            label: "Qwen OAuth",
-            type: "oauth",
-            authorize: async () => {
-              const device = await authorizeQwenDevice(oauthOptions);
-              const url =
-                device.verificationUriComplete ?? device.verificationUri;
-              const instructions = `Open ${device.verificationUri} and enter code ${device.userCode}`;
-
-              return {
-                url,
-                method: "auto",
-                instructions,
-                callback: async () => {
-                  const result = await pollQwenDeviceToken(
-                    oauthOptions,
-                    device.deviceCode,
-                    device.intervalSeconds,
-                    device.expiresAt,
-                    device.codeVerifier,
-                  );
-                  if (result.type === "success") {
-                    return {
-                      type: "success",
-                      refresh: result.refresh,
-                      access: result.access,
-                      expires: result.expires,
-                      resourceUrl: result.resourceUrl,
-                    };
-                  }
-                  return { type: "failed", error: result.error };
-                },
-              };
-            },
+              },
+            };
           },
-        ],
-      },
+          methods: [
+            {
+              label: "Qwen OAuth",
+              type: "oauth",
+              authorize: async () => {
+                const device = await authorizeQwenDevice(oauthOptions);
+                const url =
+                  device.verificationUriComplete ?? device.verificationUri;
+                const instructions = `Open ${device.verificationUri} and enter code ${device.userCode}`;
+
+                return {
+                  url,
+                  method: "auto",
+                  instructions,
+                  callback: async () => {
+                    const result = await pollQwenDeviceToken(
+                      oauthOptions,
+                      device.deviceCode,
+                      device.intervalSeconds,
+                      device.expiresAt,
+                      device.codeVerifier,
+                    );
+                    if (result.type === "success") {
+                      return {
+                        type: "success",
+                        refresh: result.refresh,
+                        access: result.access,
+                        expires: result.expires,
+                        resourceUrl: result.resourceUrl,
+                      };
+                    }
+                    return { type: "failed", error: result.error };
+                  },
+                };
+              },
+            },
+          ],
+        },
+      };
     };
-  };
 
 export const QwenCLIOAuthPlugin = createQwenOAuthPlugin("qwen");
 export const QwenOAuthPlugin = QwenCLIOAuthPlugin;
