@@ -1,10 +1,22 @@
 import type { AuthDetails, OAuthAuthDetails } from "./types";
 
+/**
+ * Rejects empty values and placeholder strings often produced when
+ * `undefined` is stringified into storage or URLSearchParams.
+ */
+export function isValidOAuthRefreshToken(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value !== "undefined" &&
+    value !== "null"
+  );
+}
+
 export function isOAuthAuth(auth: AuthDetails): auth is OAuthAuthDetails {
   return (
     auth.type === "oauth" &&
-    typeof auth.refresh === "string" &&
-    auth.refresh.length > 0
+    isValidOAuthRefreshToken((auth as { refresh?: unknown }).refresh)
   );
 }
 
