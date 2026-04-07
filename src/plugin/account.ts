@@ -36,7 +36,7 @@ async function acquireFileLock(
   let attempt = 0;
   let delay = r.minTimeout;
 
-  for (;;) {
+  for (; ;) {
     try {
       await fs.mkdir(lockDir);
       await fs
@@ -52,8 +52,7 @@ async function acquireFileLock(
           .catch(() => undefined);
       };
     } catch (err) {
-      const e = err as NodeJS.ErrnoException;
-      if (e.code !== "EEXIST") throw e;
+      if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") throw err;
 
       // Check staleness using directory mtime (available immediately after mkdir)
       // This avoids race condition where pid file hasn't been written yet
