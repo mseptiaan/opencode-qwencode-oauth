@@ -296,7 +296,17 @@ export const createQwenOAuthPlugin =
         provider: providerId,
         async loader(getAuth: GetAuth, provider: Provider) {
           const auth = (await getAuth()) as AuthDetails;
+          logger.debug("Auth loader called", {
+            hasType: "type" in auth,
+            authType: auth.type,
+            hasRefresh: typeof auth.refresh === "string",
+            refreshLength:
+              typeof auth.refresh === "string" ? auth.refresh.length : 0,
+          });
           if (!isOAuthAuth(auth)) {
+            logger.debug(
+              "Auth not recognized as OAuth, returning empty object",
+            );
             return {};
           }
 

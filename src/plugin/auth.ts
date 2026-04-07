@@ -1,11 +1,13 @@
 import type { AuthDetails, OAuthAuthDetails } from "./types";
 
 export function isOAuthAuth(auth: AuthDetails): auth is OAuthAuthDetails {
-  return (
-    auth.type === "oauth" &&
-    typeof auth.refresh === "string" &&
-    auth.refresh.length > 0
-  );
+  if (auth.type === "oauth") {
+    return typeof auth.refresh === "string" && auth.refresh.length > 0;
+  }
+  if (typeof auth.refresh === "string" && auth.refresh.length > 0) {
+    return true;
+  }
+  return false;
 }
 
 export function calculateTokenExpiry(
