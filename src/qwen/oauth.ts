@@ -6,7 +6,7 @@ import {
   QWEN_OAUTH_BASE_URL,
   QWEN_TOKEN_ENDPOINT,
 } from "../constants";
-import { calculateTokenExpiry } from "../plugin/auth";
+import { calculateTokenExpiry, isValidOAuthRefreshToken } from "../plugin/auth";
 import { createLogger } from "../plugin/logger";
 
 const logger = createLogger("oauth");
@@ -218,12 +218,7 @@ export async function refreshQwenToken(
   options: QwenOAuthOptions,
   refreshToken: string,
 ): Promise<QwenTokenResult> {
-  if (
-    typeof refreshToken !== "string" ||
-    refreshToken.length === 0 ||
-    refreshToken === "undefined" ||
-    refreshToken === "null"
-  ) {
+  if (!isValidOAuthRefreshToken(refreshToken)) {
     return {
       type: "failed",
       error: "Missing or invalid refresh token",
@@ -247,18 +242,16 @@ export async function refreshQwenToken(
   );
 
   if (!response.ok) {
-    const body = await response.text();
-    const errorPayload = (await response
-      .json()
-      .catch(() => ({}))) as QwenErrorResponse;
+    const bodyText = await response.text();
+    const errorPayload = (JSON.parse(bodyText) || {}) as QwenErrorResponse;
     logger.debug("Failed to refresh token", {
       url: resolveOAuthUrl(options.oauthBaseUrl, QWEN_TOKEN_ENDPOINT),
-      bodyRequest: createOAuthBody({
+      bodyRequest: {
         client_id: resolveClientId(options.clientId),
         grant_type: "refresh_token",
-        refresh_token: refreshToken,
-      }),
-      bodyResponse: body,
+        refresh_token: "***",
+      },
+      bodyResponse: bodyText,
     });
     return {
       type: "failed",
