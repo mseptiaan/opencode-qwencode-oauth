@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
+import { isValidOAuthRefreshToken } from "./auth";
 import type { RotationStrategy } from "./config/schema";
 import {
   type AccountWithMetrics,
@@ -202,7 +203,9 @@ async function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
 }
 
 function normalizeStorage(storage: AccountStorage): AccountStorage {
-  const accounts = storage.accounts.filter((account) => account?.refreshToken);
+  const accounts = storage.accounts.filter((account) =>
+    isValidOAuthRefreshToken(account?.refreshToken),
+  );
   const activeIndex =
     accounts.length > 0
       ? Math.min(Math.max(storage.activeIndex, 0), accounts.length - 1)

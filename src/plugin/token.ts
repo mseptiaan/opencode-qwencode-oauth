@@ -1,4 +1,5 @@
 import { type QwenOAuthOptions, refreshQwenToken } from "../qwen/oauth";
+import { isValidOAuthRefreshToken } from "./auth";
 import type { OAuthAuthDetails, PluginClient } from "./types";
 
 export class QwenTokenRefreshError extends Error {
@@ -17,6 +18,12 @@ export async function refreshAccessToken(
   client: PluginClient,
   providerId: string,
 ): Promise<OAuthAuthDetails | null> {
+  if (!isValidOAuthRefreshToken(auth.refresh)) {
+    throw new QwenTokenRefreshError(
+      "Missing or invalid refresh token; re-authenticate with Qwen OAuth.",
+      "invalid_request",
+    );
+  }
   const result = await refreshQwenToken(options, auth.refresh);
 
   if (result.type === "failed") {
