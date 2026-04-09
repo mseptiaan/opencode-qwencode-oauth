@@ -36,6 +36,7 @@ export function createSSETransformStream(
   let sentCreated = false;
   let sentItemAdded = false;
   let sentContentPartAdded = false;
+  let sentCompleted = false;
   let messageOutputIndex = -1;
   let inputTokens = 0;
   let outputTokens = 0;
@@ -141,6 +142,7 @@ export function createSSETransformStream(
               },
             }),
           );
+          sentCompleted = true;
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           continue;
         }
@@ -277,44 +279,149 @@ export function createSSETransformStream(
       }
     },
     flush(controller) {
+      if (sentCompleted) return;
+
       buffer += decoder.decode();
       const trimmed = buffer.trim();
-      if (!trimmed) return;
 
       ctx.logger?.verbose("Flush remaining SSE buffer", {
         length: trimmed.length,
       });
 
-      if (!trimmed.startsWith("data: ")) return;
-      const data = trimmed.slice(6).trim();
-      if (!data || data === "[DONE]") return;
-
-      try {
-        const parsed = JSON.parse(data);
-        if (parsed.model) modelName = parsed.model;
-        const usage = parsed.usage;
-        if (usage) {
-          inputTokens = usage.prompt_tokens ?? inputTokens;
-          outputTokens = usage.completion_tokens ?? outputTokens;
+      if (trimmed) {
+        if (!trimmed.startsWith("data: ")) {
+          ctx.logger?.verbose("Flush: non-data buffer, skipping parse", {
+            buffer: trimmed.slice(0, 100),
+          });
+        } else {
+          const data = trimmed.slice(6).trim();
+          if (data && data !== "[DONE]") {
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.model) modelName = parsed.model;
+              const usage = parsed.usage;
+              if (usage) {
+                inputTokens = usage.prompt_tokens ?? inputTokens;
+                outputTokens = usage.completion_tokens ?? outputTokens;
+              }
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (delta) {
+                accumulatedText += delta;
+                controller.enqueue(
+                  emit({
+                    type: "response.output_text.delta",
+                    item_id: ctx.itemId,
+                    output_index: messageOutputIndex,
+                    content_index: 0,
+                    delta,
+                  }),
+                );
+              }
+            } catch {
+              ctx.logger?.verbose("Flush: malformed SSE data in trailing buffer", {
+                data,
+              });
+            }
+          }
         }
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          accumulatedText += delta;
-          controller.enqueue(
-            emit({
-              type: "response.output_text.delta",
-              item_id: ctx.itemId,
-              output_index: messageOutputIndex,
-              content_index: 0,
-              delta,
-            }),
-          );
-        }
-      } catch {
-        ctx.logger?.verbose("Flush: malformed SSE data in trailing buffer", {
-          data,
-        });
       }
+
+      if (!sentCreated) {
+        controller.enqueue(
+          emit({
+            type: "response.created",
+            response: {
+              id: ctx.responseId,
+              object: "response",
+              created_at: ctx.createdAt,
+              status: "in_progress",
+              model: modelName,
+            },
+          }),
+        );
+        sentCreated = true;
+      }
+
+      if (accumulatedText || sentContentPartAdded) {
+        controller.enqueue(
+          emit({
+            type: "response.output_text.done",
+            item_id: ctx.itemId,
+            output_index: messageOutputIndex,
+            content_index: 0,
+            text: accumulatedText,
+          }),
+        );
+        controller.enqueue(
+          emit({
+            type: "response.content_part.done",
+            item_id: ctx.itemId,
+            output_index: messageOutputIndex,
+            content_index: 0,
+            part: {
+              type: "output_text",
+              text: accumulatedText,
+              annotations: [],
+            },
+          }),
+        );
+        controller.enqueue(
+          emit({
+            type: "response.output_item.done",
+            output_index: messageOutputIndex,
+            item: {
+              id: ctx.itemId,
+              type: "message",
+              status: "completed",
+              role: "assistant",
+              content: [{ type: "output_text", text: accumulatedText }],
+            },
+          }),
+        );
+      }
+
+      for (const [, tcState] of toolCallStates) {
+        controller.enqueue(
+          emit({
+            type: "response.function_call_arguments.done",
+            item_id: tcState.id,
+            output_index: tcState.outputIndex,
+            arguments: tcState.arguments,
+          }),
+        );
+        controller.enqueue(
+          emit({
+            type: "response.output_item.done",
+            output_index: tcState.outputIndex,
+            item: {
+              id: tcState.id,
+              type: "function_call",
+              status: "completed",
+              name: tcState.name,
+              arguments: tcState.arguments,
+              call_id: tcState.id,
+            },
+          }),
+        );
+      }
+
+      controller.enqueue(
+        emit({
+          type: "response.completed",
+          response: {
+            id: ctx.responseId,
+            object: "response",
+            created_at: ctx.createdAt,
+            status: "completed",
+            model: modelName,
+            usage: {
+              input_tokens: inputTokens,
+              output_tokens: outputTokens,
+            },
+          },
+        }),
+      );
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
     },
   });
 }
