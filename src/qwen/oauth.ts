@@ -8,6 +8,12 @@ import {
 } from "../constants";
 import { calculateTokenExpiry, isValidOAuthRefreshToken } from "../plugin/auth";
 import { createLogger } from "../plugin/logger";
+import type {
+  ErrorData,
+  QwenCredentials,
+  QwenTokenClient,
+  TokenRefreshData,
+} from "./sharedTokenManager";
 
 const logger = createLogger("oauth");
 
@@ -268,4 +274,58 @@ export async function refreshQwenToken(
     expires: calculateTokenExpiry(Date.now(), payload.expires_in),
     resourceUrl: payload.resource_url,
   };
+}
+
+export class QwenAuthClient implements QwenTokenClient {
+  private options: QwenOAuthOptions;
+  private credentials: QwenCredentials;
+
+  constructor(options: QwenOAuthOptions, credentials: QwenCredentials) {
+    this.options = options;
+    this.credentials = credentials;
+  }
+
+  getCredentials(): QwenCredentials {
+    return this.credentials;
+  }
+
+  setCredentials(credentials: QwenCredentials): void {
+    this.credentials = credentials;
+  }
+
+  async refreshAccessToken(): Promise<TokenRefreshData | ErrorData> {
+    if (!this.credentials.refresh_token) {
+      return {
+        error: "invalid_request",
+        error_description: "No refresh token available",
+      };
+    }
+
+    const result = await refreshQwenToken(
+      this.options,
+      this.credentials.refresh_token,
+    );
+
+    if (result.type === "failed") {
+      return {
+        error: result.code ?? "refresh_failed",
+        error_description: result.error,
+      };
+    }
+
+    // Convert absolute expires (ms) back to relative expires_in (seconds)
+    // using the same logic calculateTokenExpiry uses to create it
+    const expiresInSeconds = Math.max(
+      0,
+      Math.floor((result.expires - Date.now()) / 1000),
+    );
+
+    return {
+      access_token: result.access,
+      refresh_token: result.refresh,
+      token_type: "Bearer",
+      expires_in: expiresInSeconds,
+      resource_url: result.resourceUrl,
+    };
+  }
 }
