@@ -1,23 +1,41 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test";
 import { QwenTokenRefreshError, refreshAccessToken } from "../src/plugin/token";
 import type { OAuthAuthDetails, PluginClient } from "../src/plugin/types";
+import {
+  SharedTokenManager,
+  TokenManagerError,
+  TokenError,
+} from "../src/qwen/sharedTokenManager";
 
-const mockRefreshQwenToken = mock(() =>
+const mockGetValidCredentials = mock(() =>
   Promise.resolve({
-    type: "success" as const,
-    access: "access-new",
-    refresh: "refresh-new",
-    expires: 123456,
-    resourceUrl: "https://resource.example",
+    access_token: "access-new",
+    refresh_token: "refresh-new",
+    token_type: "Bearer",
+    expiry_date: 123456,
+    resource_url: "https://resource.example",
   }),
 );
 
-mock.module("../src/qwen/oauth", () => ({
-  refreshQwenToken: mockRefreshQwenToken,
-}));
+let getInstanceSpy: ReturnType<typeof spyOn>;
+
+beforeEach(() => {
+  getInstanceSpy = spyOn(SharedTokenManager, "getInstance").mockReturnValue({
+    getValidCredentials: mockGetValidCredentials,
+  } as unknown as SharedTokenManager);
+});
 
 afterEach(() => {
-  mockRefreshQwenToken.mockClear();
+  getInstanceSpy.mockRestore();
+  mockGetValidCredentials.mockClear();
 });
 
 describe("refreshAccessToken", () => {
@@ -77,6 +95,75 @@ describe("refreshAccessToken", () => {
       ),
     ).rejects.toThrow(QwenTokenRefreshError);
 
-    expect(mockRefreshQwenToken).not.toHaveBeenCalled();
+    expect(mockGetValidCredentials).not.toHaveBeenCalled();
+  });
+
+  it("throws QwenTokenRefreshError with specific code when TokenManagerError is thrown", async () => {
+    const auth: OAuthAuthDetails = {
+      type: "oauth",
+      refresh: "refresh-old",
+      access: "access-old",
+      expires: 1000,
+    };
+    const client = { auth: { set: mock() } } as unknown as PluginClient;
+
+    mockGetValidCredentials.mockRejectedValueOnce(
+      new TokenManagerError(
+        TokenError.REFRESH_FAILED,
+        "Custom token manager error",
+      ),
+    );
+
+    let caughtError: Error | undefined;
+    try {
+      await refreshAccessToken(
+        auth,
+        { clientId: "client", oauthBaseUrl: "https://chat.qwen.ai" },
+        client,
+        "qwen",
+      );
+    } catch (e: any) {
+      caughtError = e;
+    }
+
+    expect(caughtError).toBeInstanceOf(QwenTokenRefreshError);
+    expect((caughtError as QwenTokenRefreshError).message).toBe(
+      "Custom token manager error",
+    );
+    expect((caughtError as QwenTokenRefreshError).code).toBe(
+      TokenError.REFRESH_FAILED,
+    );
+  });
+
+  it("throws generic QwenTokenRefreshError when an unknown Error is thrown", async () => {
+    const auth: OAuthAuthDetails = {
+      type: "oauth",
+      refresh: "refresh-old",
+      access: "access-old",
+      expires: 1000,
+    };
+    const client = { auth: { set: mock() } } as unknown as PluginClient;
+
+    mockGetValidCredentials.mockRejectedValueOnce(
+      new Error("Generic network error"),
+    );
+
+    let caughtError: Error | undefined;
+    try {
+      await refreshAccessToken(
+        auth,
+        { clientId: "client", oauthBaseUrl: "https://chat.qwen.ai" },
+        client,
+        "qwen",
+      );
+    } catch (e: any) {
+      caughtError = e;
+    }
+
+    expect(caughtError).toBeInstanceOf(QwenTokenRefreshError);
+    expect((caughtError as QwenTokenRefreshError).message).toBe(
+      "Generic network error",
+    );
+    expect((caughtError as QwenTokenRefreshError).code).toBeUndefined();
   });
 });

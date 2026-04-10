@@ -1,5 +1,9 @@
-import { type QwenOAuthOptions, refreshQwenToken } from "../qwen/oauth";
+import { QwenAuthClient, type QwenOAuthOptions } from "../qwen/oauth";
 import { isValidOAuthRefreshToken } from "./auth";
+import {
+  SharedTokenManager,
+  TokenManagerError,
+} from "../qwen/sharedTokenManager";
 import type { OAuthAuthDetails, PluginClient } from "./types";
 
 export class QwenTokenRefreshError extends Error {
@@ -24,26 +28,42 @@ export async function refreshAccessToken(
       "invalid_request",
     );
   }
-  const result = await refreshQwenToken(options, auth.refresh);
 
-  if (result.type === "failed") {
-    throw new QwenTokenRefreshError(result.error, result.code);
-  }
-
-  const updated: OAuthAuthDetails = {
-    type: "oauth",
-    refresh: result.refresh,
-    access: result.access,
-    expires: result.expires,
-    resourceUrl: result.resourceUrl ?? auth.resourceUrl,
-  };
-
-  const body = updated as Parameters<PluginClient["auth"]["set"]>[0]["body"];
-
-  await client.auth.set({
-    path: { id: providerId },
-    body,
+  const authClient = new QwenAuthClient(options, {
+    access_token: auth.access || "",
+    refresh_token: auth.refresh as string,
+    token_type: "Bearer",
+    expiry_date: auth.expires,
+    resource_url: auth.resourceUrl,
   });
 
-  return updated;
+  const manager = SharedTokenManager.getInstance();
+
+  try {
+    const result = await manager.getValidCredentials(authClient, false); // forceRefresh=false because we only want to refresh if it's actually expired or missing
+
+    const updated: OAuthAuthDetails = {
+      type: "oauth",
+      refresh: result.refresh_token!,
+      access: result.access_token,
+      expires: result.expiry_date!,
+      resourceUrl: result.resource_url ?? auth.resourceUrl,
+    };
+
+    const body = updated as Parameters<PluginClient["auth"]["set"]>[0]["body"];
+
+    await client.auth.set({
+      path: { id: providerId },
+      body,
+    });
+
+    return updated;
+  } catch (error) {
+    if (error instanceof TokenManagerError) {
+      throw new QwenTokenRefreshError(error.message, error.type);
+    }
+    throw new QwenTokenRefreshError(
+      error instanceof Error ? error.message : "Failed to refresh token",
+    );
+  }
 }
