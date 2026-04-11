@@ -50,7 +50,9 @@ export function transformHeader(
   }
 
   logger.verbose("Transformed headers", {
-    authorization: headers.has("Authorization") ? "Bearer [redacted]" : "none",
+    authorization: headers.has("Authorization")
+      ? headers.get("Authorization")
+      : "none",
     userAgent: ua,
   });
 
