@@ -19,12 +19,20 @@ export const TokenBucketConfigSchema = z.object({
   regeneration_rate_per_minute: z.number().min(0).default(6),
 });
 
+export const AdaptiveConfigSchema = z.object({
+  learning_rate: z.number().min(0.01).max(0.5).default(0.1),
+  history_window: z.number().min(5).max(50).default(10),
+  min_weight: z.number().min(0.01).max(0.5).default(0.1),
+  max_weight: z.number().min(0.5).max(2.0).default(1.0),
+  cooldown_period_seconds: z.number().min(60).max(3600).default(300),
+});
+
 export const QwenConfigSchema = z.object({
   client_id: z.string().default(QWEN_DEFAULT_CLIENT_ID),
   oauth_base_url: z.string().default(QWEN_OAUTH_BASE_URL),
   base_url: z.string().default(QWEN_DEFAULT_API_BASE_URL),
   rotation_strategy: z
-    .enum(["round-robin", "sequential", "hybrid"])
+    .enum(["round-robin", "sequential", "hybrid", "adaptive"])
     .default("hybrid"),
   proactive_refresh: z.boolean().default(true),
   refresh_window_seconds: z.number().min(0).default(300),
@@ -33,9 +41,11 @@ export const QwenConfigSchema = z.object({
   pid_offset_enabled: z.boolean().default(false),
   health_score: HealthScoreConfigSchema.optional(),
   token_bucket: TokenBucketConfigSchema.optional(),
+  adaptive: AdaptiveConfigSchema.optional(),
 });
 
 export type HealthScorePluginConfig = z.infer<typeof HealthScoreConfigSchema>;
 export type TokenBucketPluginConfig = z.infer<typeof TokenBucketConfigSchema>;
+export type AdaptivePluginConfig = z.infer<typeof AdaptiveConfigSchema>;
 export type QwenPluginConfig = z.infer<typeof QwenConfigSchema>;
 export type RotationStrategy = QwenPluginConfig["rotation_strategy"];

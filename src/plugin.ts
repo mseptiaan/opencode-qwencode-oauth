@@ -23,8 +23,10 @@ import {
   setLoggerQuietMode,
 } from "./plugin/logger";
 import {
+  getAdaptiveTracker,
   getHealthTracker,
   getTokenTracker,
+  initAdaptiveTracker,
   initHealthTracker,
   initTokenTracker,
 } from "./plugin/rotation";
@@ -260,6 +262,15 @@ function initializeTrackers(config: LoadedConfig): void {
         }
       : undefined,
   );
+  if (config.rotation_strategy === "adaptive" && config.adaptive) {
+    initAdaptiveTracker({
+      learningRate: config.adaptive.learning_rate,
+      historyWindow: config.adaptive.history_window,
+      minWeight: config.adaptive.min_weight,
+      maxWeight: config.adaptive.max_weight,
+      cooldownPeriodMs: config.adaptive.cooldown_period_seconds * 1000,
+    });
+  }
 }
 
 function getPidOffset(config: LoadedConfig): number {
@@ -326,9 +337,11 @@ export const createQwenOAuthPlugin =
               let attempts = 0;
               const healthTracker = getHealthTracker();
               const tokenTracker = getTokenTracker();
+              const adaptiveTracker = getAdaptiveTracker();
               const selectOptions: SelectAccountOptions = {
                 healthTracker,
                 tokenTracker,
+                adaptiveTracker,
                 pidOffset,
               };
 
@@ -491,11 +504,18 @@ export const createQwenOAuthPlugin =
 
                 const finalInit = { ...requestInit };
                 if (needsResponsesTransform && requestInit?.body) {
+                  let backupStream: ReadableStream | null = null;
                   try {
-                    const bodyStr =
-                      typeof requestInit.body === "string"
-                        ? requestInit.body
-                        : await new Response(requestInit.body).text();
+                    let bodyStr: string;
+                    if (typeof requestInit.body === "string") {
+                      bodyStr = requestInit.body;
+                    } else if (requestInit.body instanceof ReadableStream) {
+                      const [readStream, backup] = requestInit.body.tee();
+                      backupStream = backup;
+                      bodyStr = await new Response(readStream).text();
+                    } else {
+                      bodyStr = await new Response(requestInit.body).text();
+                    }
                     const body = JSON.parse(bodyStr);
                     const transformed =
                       transformResponsesToChatCompletions(body);
@@ -505,6 +525,9 @@ export const createQwenOAuthPlugin =
                       hasTools: !!transformed.tools,
                     });
                   } catch {
+                    if (backupStream) {
+                      finalInit.body = backupStream;
+                    }
                     logger.debug("Body parse failed, using original");
                   }
                 }
@@ -597,8 +620,14 @@ export const createQwenOAuthPlugin =
                   accountStorage = recordFailure(accountStorage, accountIndex);
                   if (response.status === 429) {
                     healthTracker.recordRateLimit(accountIndex);
+                    if (config.rotation_strategy === "adaptive") {
+                      adaptiveTracker.recordRateLimit(accountIndex);
+                    }
                   } else {
                     healthTracker.recordFailure(accountIndex);
+                    if (config.rotation_strategy === "adaptive") {
+                      adaptiveTracker.recordFailure(accountIndex);
+                    }
                   }
                   await saveAccounts(accountStorage);
                   await saveTrackerState(healthTracker, tokenTracker);
@@ -623,6 +652,9 @@ export const createQwenOAuthPlugin =
 
                 accountStorage = recordSuccess(accountStorage, accountIndex);
                 healthTracker.recordSuccess(accountIndex);
+                if (config.rotation_strategy === "adaptive") {
+                  adaptiveTracker.recordSuccess(accountIndex);
+                }
                 await saveAccounts(accountStorage);
                 await saveTrackerState(healthTracker, tokenTracker);
                 return response;

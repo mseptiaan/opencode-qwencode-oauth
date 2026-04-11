@@ -6,6 +6,7 @@ type JsonValue = any;
 export interface SSETransformContext {
   responseId: string;
   itemId: string;
+  reasoningItemId: string;
   createdAt: number;
   logger?: Logger;
 }
@@ -16,6 +17,7 @@ export function createSSETransformContext(
   return {
     responseId: `resp_${Date.now().toString(36)}`,
     itemId: `msg_${Date.now().toString(36)}`,
+    reasoningItemId: `rs_${Date.now().toString(36)}`,
     createdAt: Math.floor(Date.now() / 1000),
     logger,
   };
@@ -33,11 +35,16 @@ export function createSSETransformStream(
   ctx: SSETransformContext,
 ): TransformStream<Uint8Array, Uint8Array> {
   let accumulatedText = "";
+  let accumulatedReasoningText = "";
   let sentCreated = false;
   let sentItemAdded = false;
   let sentContentPartAdded = false;
+  let sentReasoningItemAdded = false;
+  let sentReasoningPartAdded = false;
   let sentCompleted = false;
   let messageOutputIndex = -1;
+  let reasoningOutputIndex = -1;
+  let sequenceNumber = 0;
   let inputTokens = 0;
   let outputTokens = 0;
   let modelName = "qwen";
@@ -48,12 +55,15 @@ export function createSSETransformStream(
   const encoder = new TextEncoder();
 
   const emit = (event: JsonValue): Uint8Array => {
-    return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+    event.sequence_number = sequenceNumber++;
+    const out = `data: ${JSON.stringify(event)}\n\n`;
+    return encoder.encode(out);
   };
 
   return new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       buffer += decoder.decode(chunk, { stream: true });
+
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? "";
 
@@ -63,6 +73,19 @@ export function createSSETransformStream(
         const data = line.slice(6).trim();
 
         if (data === "[DONE]") {
+          if (accumulatedReasoningText || sentReasoningPartAdded) {
+            controller.enqueue(
+              emit({
+                type: "response.output_item.done",
+                output_index: reasoningOutputIndex,
+                item: {
+                  id: ctx.reasoningItemId,
+                  type: "reasoning",
+                },
+              }),
+            );
+          }
+
           if (accumulatedText || sentContentPartAdded) {
             controller.enqueue(
               emit({
@@ -135,6 +158,36 @@ export function createSSETransformStream(
                 created_at: ctx.createdAt,
                 status: "completed",
                 model: modelName,
+                reasoning: { enabled: true },
+                output: [
+                  ...(accumulatedReasoningText
+                    ? [
+                        {
+                          id: ctx.reasoningItemId,
+                          type: "reasoning",
+                          summary: [
+                            {
+                              type: "summary_text",
+                              text: accumulatedReasoningText,
+                            },
+                          ],
+                        },
+                      ]
+                    : []),
+                  ...(accumulatedText
+                    ? [
+                        {
+                          id: ctx.itemId,
+                          type: "message",
+                          status: "completed",
+                          role: "assistant",
+                          content: [
+                            { type: "output_text", text: accumulatedText },
+                          ],
+                        },
+                      ]
+                    : []),
+                ],
                 usage: {
                   input_tokens: inputTokens,
                   output_tokens: outputTokens,
@@ -166,6 +219,20 @@ export function createSSETransformStream(
                   created_at: ctx.createdAt,
                   status: "in_progress",
                   model: modelName,
+                  reasoning: { enabled: true },
+                },
+              }),
+            );
+            controller.enqueue(
+              emit({
+                type: "response.in_progress",
+                response: {
+                  id: ctx.responseId,
+                  object: "response",
+                  created_at: ctx.createdAt,
+                  status: "in_progress",
+                  model: modelName,
+                  reasoning: { enabled: true },
                 },
               }),
             );
@@ -174,6 +241,45 @@ export function createSSETransformStream(
 
           const choices = parsed.choices;
           const delta = choices?.[0]?.delta?.content;
+          const reasoningDelta = choices?.[0]?.delta?.reasoning_content;
+
+          if (reasoningDelta !== undefined && reasoningDelta !== null) {
+            if (!sentReasoningItemAdded) {
+              reasoningOutputIndex = nextOutputIndex++;
+              controller.enqueue(
+                emit({
+                  type: "response.output_item.added",
+                  output_index: reasoningOutputIndex,
+                  item: {
+                    id: ctx.reasoningItemId,
+                    type: "reasoning",
+                  },
+                }),
+              );
+              sentReasoningItemAdded = true;
+            }
+            if (!sentReasoningPartAdded) {
+              controller.enqueue(
+                emit({
+                  type: "response.reasoning_summary_part.added",
+                  item_id: ctx.reasoningItemId,
+                  summary_index: 0,
+                }),
+              );
+              sentReasoningPartAdded = true;
+            }
+            if (reasoningDelta) {
+              accumulatedReasoningText += reasoningDelta;
+              controller.enqueue(
+                emit({
+                  type: "response.reasoning_summary_text.delta",
+                  item_id: ctx.reasoningItemId,
+                  summary_index: 0,
+                  delta: reasoningDelta,
+                }),
+              );
+            }
+          }
 
           if (delta !== undefined && delta !== null) {
             if (!sentItemAdded) {
@@ -305,6 +411,19 @@ export function createSSETransformStream(
                 outputTokens = usage.completion_tokens ?? outputTokens;
               }
               const delta = parsed.choices?.[0]?.delta?.content;
+              const reasoningDelta =
+                parsed.choices?.[0]?.delta?.reasoning_content;
+              if (reasoningDelta) {
+                accumulatedReasoningText += reasoningDelta;
+                controller.enqueue(
+                  emit({
+                    type: "response.reasoning_summary_text.delta",
+                    item_id: ctx.reasoningItemId,
+                    summary_index: 0,
+                    delta: reasoningDelta,
+                  }),
+                );
+              }
               if (delta) {
                 accumulatedText += delta;
                 controller.enqueue(
@@ -318,9 +437,12 @@ export function createSSETransformStream(
                 );
               }
             } catch {
-              ctx.logger?.verbose("Flush: malformed SSE data in trailing buffer", {
-                data,
-              });
+              ctx.logger?.verbose(
+                "Flush: malformed SSE data in trailing buffer",
+                {
+                  data,
+                },
+              );
             }
           }
         }
@@ -336,10 +458,32 @@ export function createSSETransformStream(
               created_at: ctx.createdAt,
               status: "in_progress",
               model: modelName,
+              reasoning: { enabled: true },
             },
           }),
         );
         sentCreated = true;
+      }
+
+      if (accumulatedReasoningText || sentReasoningPartAdded) {
+        controller.enqueue(
+          emit({
+            type: "response.reasoning_summary_part.done",
+            item_id: ctx.reasoningItemId,
+            summary_index: 0,
+            text: accumulatedReasoningText,
+          }),
+        );
+        controller.enqueue(
+          emit({
+            type: "response.output_item.done",
+            output_index: reasoningOutputIndex,
+            item: {
+              id: ctx.reasoningItemId,
+              type: "reasoning",
+            },
+          }),
+        );
       }
 
       if (accumulatedText || sentContentPartAdded) {
