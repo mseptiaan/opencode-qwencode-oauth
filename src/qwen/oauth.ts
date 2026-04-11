@@ -13,7 +13,8 @@ const logger = createLogger("oauth");
 
 export interface QwenOAuthOptions {
   clientId: string;
-  oauthBaseUrl: string;
+  /** When omitted or empty, {@link QWEN_OAUTH_BASE_URL} is used. */
+  oauthBaseUrl?: string;
   scopes?: string[];
 }
 
@@ -61,15 +62,33 @@ export type QwenTokenResult =
       type: "failed";
       error: string;
       code?: string;
+      status?: number;
     };
 
 function createOAuthBody(entries: Record<string, string>): URLSearchParams {
   return new URLSearchParams(entries);
 }
 
+function effectiveOAuthBaseUrl(base: string | undefined): string {
+  if (typeof base !== "string") {
+    return QWEN_OAUTH_BASE_URL;
+  }
+  const trimmed = base.trim();
+  if (!trimmed) {
+    return QWEN_OAUTH_BASE_URL;
+  }
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
+
 function resolveOAuthUrl(base: string | undefined, endpoint: string): string {
-  const normalized =
-    typeof base === "string" && base.trim() ? base : QWEN_OAUTH_BASE_URL;
+  const normalized = effectiveOAuthBaseUrl(base);
+  logger.debug("resolveOAuthUrl", {
+    base: normalized,
+    endpoint,
+  });
   try {
     return new URL(endpoint, normalized).toString();
   } catch (error) {
@@ -102,10 +121,15 @@ function createPkcePair(): { verifier: string; challenge: string } {
 export async function authorizeQwenDevice(
   options: QwenOAuthOptions,
 ): Promise<QwenDeviceAuthorization> {
+  const oauthBase = effectiveOAuthBaseUrl(options.oauthBaseUrl);
+  logger.debug("authorizeQwenDevice", {
+    oauthBaseUrl: oauthBase,
+    deviceCodeEndpoint: QWEN_DEVICE_CODE_ENDPOINT,
+  });
   const scopes = options.scopes ?? QWEN_DEFAULT_SCOPES;
   const { verifier, challenge } = createPkcePair();
   const response = await fetch(
-    resolveOAuthUrl(options.oauthBaseUrl, QWEN_DEVICE_CODE_ENDPOINT),
+    resolveOAuthUrl(oauthBase, QWEN_DEVICE_CODE_ENDPOINT),
     {
       method: "POST",
       headers: {
@@ -218,17 +242,23 @@ export async function refreshQwenToken(
   options: QwenOAuthOptions,
   refreshToken: string,
 ): Promise<QwenTokenResult> {
+  const oauthBase = effectiveOAuthBaseUrl(options.oauthBaseUrl);
+  logger.debug("refreshQwenToken", {
+    oauthBaseUrl: oauthBase,
+    tokenEndpoint: QWEN_TOKEN_ENDPOINT,
+  });
   if (!isValidOAuthRefreshToken(refreshToken)) {
     return {
       type: "failed",
       error: "Missing or invalid refresh token",
       code: "invalid_request",
+      status: 400,
     };
   }
 
-  const response = await fetch(
-    resolveOAuthUrl(options.oauthBaseUrl, QWEN_TOKEN_ENDPOINT),
-    {
+  let response: Response;
+  try {
+    response = await fetch(resolveOAuthUrl(oauthBase, QWEN_TOKEN_ENDPOINT), {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -238,14 +268,27 @@ export async function refreshQwenToken(
         grant_type: "refresh_token",
         refresh_token: refreshToken,
       }),
-    },
-  );
+    });
+  } catch (error) {
+    logger.debug("Network error during token refresh", { error });
+    return {
+      type: "failed",
+      error: error instanceof Error ? error.message : String(error),
+      code: "network_error",
+    };
+  }
 
   if (!response.ok) {
     const bodyText = await response.text();
-    const errorPayload = (JSON.parse(bodyText) || {}) as QwenErrorResponse;
+    let errorPayload: QwenErrorResponse = {};
+    try {
+      errorPayload = JSON.parse(bodyText);
+    } catch {
+      // Ignore parse error
+    }
     logger.debug("Failed to refresh token", {
-      url: resolveOAuthUrl(options.oauthBaseUrl, QWEN_TOKEN_ENDPOINT),
+      url: resolveOAuthUrl(oauthBase, QWEN_TOKEN_ENDPOINT),
+      status: response.status,
       bodyRequest: {
         client_id: resolveClientId(options.clientId),
         grant_type: "refresh_token",
@@ -257,6 +300,7 @@ export async function refreshQwenToken(
       type: "failed",
       error: errorPayload.error_description ?? "Failed to refresh token",
       code: errorPayload.error,
+      status: response.status,
     };
   }
 

@@ -6,6 +6,8 @@ import { isValidOAuthRefreshToken } from "./auth";
 import type { RotationStrategy } from "./config/schema";
 import {
   type AccountWithMetrics,
+  type AdaptiveTracker,
+  getAdaptiveTracker,
   getHealthTracker,
   getTokenTracker,
   type HealthScoreState,
@@ -37,7 +39,7 @@ async function acquireFileLock(
   let attempt = 0;
   let delay = r.minTimeout;
 
-  for (; ;) {
+  for (;;) {
     try {
       await fs.mkdir(lockDir);
       await fs
@@ -88,13 +90,15 @@ async function acquireFileLock(
 export type { RotationStrategy } from "./config/schema";
 
 /**
- * Options for selectAccount when using hybrid strategy.
+ * Options for selectAccount when using hybrid or adaptive strategy.
  */
 export interface SelectAccountOptions {
-  /** Health score tracker for hybrid selection */
+  /** Health score tracker for hybrid/adaptive selection */
   healthTracker?: HealthScoreTracker;
-  /** Token bucket tracker for hybrid selection */
+  /** Token bucket tracker for hybrid/adaptive selection */
   tokenTracker?: TokenBucketTracker;
+  /** Adaptive tracker for adaptive strategy */
+  adaptiveTracker?: AdaptiveTracker;
   /** PID offset for distributing sessions across accounts */
   pidOffset?: number;
 }
@@ -434,6 +438,69 @@ export function selectAccount(
     }
 
     const result = selectHybridAccount(
+      accountsWithMetrics,
+      healthTracker.config.minUsable,
+      tokenTracker.getMaxTokens(),
+    );
+
+    if (!result) {
+      return null;
+    }
+
+    const selectedIndex = result.index;
+    const selectedAccount = storage.accounts[selectedIndex];
+    if (!selectedAccount) return null;
+
+    const consumed = tokenTracker.consume(selectedIndex);
+    if (!consumed) {
+      return null;
+    }
+
+    const updatedAccounts = [...storage.accounts];
+    updatedAccounts[selectedIndex] = {
+      ...selectedAccount,
+      lastUsed: now,
+    };
+    const updated = normalizeStorage({
+      version: STORAGE_VERSION,
+      accounts: updatedAccounts,
+      activeIndex: selectedIndex,
+    });
+    return {
+      account: updatedAccounts[selectedIndex],
+      index: selectedIndex,
+      storage: updated,
+    };
+  }
+
+  if (strategy === "adaptive") {
+    const healthTracker = options?.healthTracker ?? getHealthTracker();
+    const tokenTracker = options?.tokenTracker ?? getTokenTracker();
+    const adaptiveTracker = options?.adaptiveTracker ?? getAdaptiveTracker();
+    const pidOffset = options?.pidOffset ?? 0;
+
+    const accountsWithMetrics: AccountWithMetrics[] = storage.accounts.map(
+      (account, idx) => ({
+        index: idx,
+        lastUsed: account.lastUsed,
+        healthScore: healthTracker.getScore(idx),
+        tokens: tokenTracker.getTokens(idx),
+        isRateLimited: !!(
+          account.requiresReauth ||
+          (account.rateLimitResetAt && account.rateLimitResetAt > now)
+        ),
+      }),
+    );
+
+    if (pidOffset > 0 && accountsWithMetrics.length > 1) {
+      const rotateBy = pidOffset % accountsWithMetrics.length;
+      for (let i = 0; i < rotateBy; i++) {
+        const first = accountsWithMetrics.shift();
+        if (first) accountsWithMetrics.push(first);
+      }
+    }
+
+    const result = adaptiveTracker.selectAccount(
       accountsWithMetrics,
       healthTracker.config.minUsable,
       tokenTracker.getMaxTokens(),
