@@ -292,7 +292,7 @@ export async function refreshQwenToken(
       bodyRequest: {
         client_id: resolveClientId(options.clientId),
         grant_type: "refresh_token",
-        refresh_token: refreshToken,
+        refresh_token: "***",
       },
       bodyResponse: bodyText,
     });

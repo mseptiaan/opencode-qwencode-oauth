@@ -57,15 +57,26 @@ export async function transformRequestAsync(
 
   const finalInit = { ...requestInit };
   if (needsResponsesTransform && requestInit?.body) {
+    let backupStream: ReadableStream | null = null;
     try {
-      const bodyStr =
-        typeof requestInit.body === "string"
-          ? requestInit.body
-          : await new Response(requestInit.body).text();
+      let bodyStr: string;
+      if (typeof requestInit.body === "string") {
+        bodyStr = requestInit.body;
+      } else if (requestInit.body instanceof ReadableStream) {
+        const [readStream, backup] = requestInit.body.tee();
+        backupStream = backup;
+        bodyStr = await new Response(readStream).text();
+      } else {
+        bodyStr = await new Response(requestInit.body).text();
+      }
       const body = JSON.parse(bodyStr);
       const transformed = transformResponsesToChatCompletions(body);
       finalInit.body = JSON.stringify(transformed);
-    } catch {}
+    } catch {
+      if (backupStream) {
+        finalInit.body = backupStream;
+      }
+    }
   }
 
   return {

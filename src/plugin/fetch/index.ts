@@ -19,7 +19,7 @@ import {
   isRateLimitedOrServerError,
   sleep,
 } from "./rate-limit";
-import { type TransformResult, transformRequestAsync } from "./transform";
+import { transformRequestAsync } from "./transform";
 
 const logger = createLogger("fetch");
 
